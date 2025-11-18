@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const mercadopago = require('mercadopago');
 const cron = require('node-cron');
 const Config = require('./models/config');
@@ -1195,8 +1195,6 @@ app.post('/registrar', async (req, res) => {
   }
 });
 
-
-// Asegurate de tener arriba: const bcrypt = require('bcrypt');
 
 app.post('/login', async (req, res) => {
   try {
