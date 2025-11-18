@@ -24,6 +24,9 @@ const statsRoutes = require("./routes/stats");
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
+const compression = require("compression");
+app.use(compression());
+
 // ============================================
 // 🚦 Límite de peticiones (rate limit)
 // ============================================
