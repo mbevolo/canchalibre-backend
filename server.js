@@ -118,7 +118,7 @@ app.post('/reservas/hold', async (req, res) => {
     });
     await reserva.save();
 
-    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
+  const link = `https://turnolibre.com.ar/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
 
     const html = `
       <h2>Confirmación de reserva</h2>
@@ -157,7 +157,7 @@ app.post('/reservas/reenviar-confirmacion', async (req, res) => {
       return res.status(400).json({ error: 'El enlace anterior expiró. Volvé a reservar.' });
     }
 
-    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
+const link = `https://turnolibre.com.ar/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
 
     const html = `
       <h2>Reenvío de confirmación</h2>
@@ -234,7 +234,7 @@ app.post('/reservas/:id/reenviar', async (req, res) => {
     reserva.codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
     await reserva.save();
 
-    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
+    const link = `https://turnolibre.com.ar/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
 
     const html = `
       <h2>Confirmación de reserva</h2>
