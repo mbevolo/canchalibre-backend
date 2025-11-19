@@ -113,21 +113,15 @@ const Reserva = require('./models/Reserva');
 // ===============================
 app.post('/reservas/hold', async (req, res) => {
   try {
-   const { canchaId, fecha, hora, usuarioId, email, telefono } = req.body;
+    const { canchaId, fecha, hora, usuarioId, email } = req.body;
 
     if (!canchaId || !fecha || !hora || !email) {
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
     }
 
-    // ➤ obtener teléfono del usuario logueado
-    let usuarioTelefono = null;
-    if (usuarioId) {
-      const usuario = await Usuario.findById(usuarioId);
-      if (usuario?.telefono) usuarioTelefono = usuario.telefono;
-    }
-
+    // Código de verificación + expiración
     const codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60000);
+    const expiresAt = new Date(Date.now() + 10 * 60000); // 10 minutos
 
     const reserva = new Reserva({
       canchaId,
@@ -135,18 +129,15 @@ app.post('/reservas/hold', async (req, res) => {
       hora,
       usuarioId,
       emailContacto: email,
-      usuarioTelefono,   // 👈 AGREGADO
-      telefonoContacto: telefono,
       estado: 'PENDING',
       codigoOTP,
       expiresAt
     });
-
     await reserva.save();
-
 
     const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
 
+    // ✅ Enviar email vía Brevo
     await sendMail(
       email,
       'Confirmá tu reserva en TurnoLibre',
@@ -159,14 +150,11 @@ app.post('/reservas/hold', async (req, res) => {
     );
 
     res.json({ mensaje: 'Te enviamos un email para confirmar tu reserva.', reservaId: reserva._id });
-
   } catch (error) {
     console.error('❌ Error en /reservas/hold:', error);
     res.status(500).json({ error: 'Error al crear reserva pendiente.' });
   }
 });
-
-
 
 // ===============================
 // Reenviar correo de confirmación (por email)
@@ -215,71 +203,21 @@ app.post('/reservas/reenviar-confirmacion', async (req, res) => {
 app.get('/reservas/confirmar/:id/:code', async (req, res) => {
   try {
     const { id, code } = req.params;
-
-    // Traigo la reserva y, si tiene usuarioId, lo lleno
-    const reserva = await Reserva.findById(id).populate('usuarioId');
+    const reserva = await Reserva.findById(id);
 
     if (!reserva) return res.send('❌ Reserva no encontrada.');
     if (reserva.estado !== 'PENDING') return res.send('⚠️ Esta reserva ya fue confirmada o expirada.');
     if (new Date() > reserva.expiresAt) return res.send('⏰ El enlace ha expirado.');
     if (reserva.codigoOTP !== code) return res.send('❌ Código inválido.');
 
-    // Busco la cancha
-    const cancha = await Cancha.findById(reserva.canchaId);
-    if (!cancha) return res.send('⚠️ Cancha no encontrada para esta reserva.');
-
-   // ===============================
-// Confirmar reserva desde el enlace
-// ===============================
-app.get('/reservas/confirmar/:id/:code', async (req, res) => {
-  try {
-    const { id, code } = req.params;
-
-    // Traigo la reserva y, si tiene usuarioId, lo lleno
-    const reserva = await Reserva.findById(id).populate('usuarioId');
-
-    if (!reserva) return res.send('❌ Reserva no encontrada.');
-    if (reserva.estado !== 'PENDING') return res.send('⚠️ Esta reserva ya fue confirmada o expirada.');
-    if (new Date() > reserva.expiresAt) return res.send('⏰ El enlace ha expirado.');
-    if (reserva.codigoOTP !== code) return res.send('❌ Código inválido.');
-
-    // Busco la cancha
-    const cancha = await Cancha.findById(reserva.canchaId);
-    if (!cancha) return res.send('⚠️ Cancha no encontrada para esta reserva.');
-
-    // <<< ESTA LÍNEA ES OBLIGATORIA >>>
-    const clubEmail = cancha.clubEmail;
-
-    // === ARMAR TELÉFONO FINAL ===
-    let telefonoFinal = null;
-
-    if (reserva.telefonoContacto) {
-      telefonoFinal = reserva.telefonoContacto;
-    } 
-    else if (reserva.usuarioTelefono) {
-      telefonoFinal = reserva.usuarioTelefono;
-    } 
-    else if (reserva.usuarioId && reserva.usuarioId.telefono) {
-      telefonoFinal = reserva.usuarioId.telefono;
-    }
-
-    function normalizarTelefono(tel) {
-      if (!tel) return null;
-      let numero = String(tel).replace(/\D/g, '');
-      if (numero.startsWith("0")) numero = numero.slice(1);
-      if (numero.startsWith("54") && !numero.startsWith("549")) {
-        numero = "9" + numero.slice(2);
-      }
-      if (!numero.startsWith("549")) numero = "549" + numero;
-      return numero;
-    }
-
-    // Confirmo la reserva
     reserva.estado = 'CONFIRMED';
     reserva.codigoOTP = null;
     await reserva.save();
 
-    // Creo el turno
+    const cancha = await Cancha.findById(reserva.canchaId);
+    if (!cancha) return res.send('⚠️ Cancha no encontrada para esta reserva.');
+
+    const clubEmail = cancha.clubEmail;
     const nuevoTurno = new Turno({
       deporte: cancha.deporte,
       fecha: reserva.fecha,
@@ -288,7 +226,6 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
       precio: cancha.precio,
       usuarioReservado: reserva.emailContacto,
       emailReservado: reserva.emailContacto,
-      telefonoReservado: normalizarTelefono(telefonoFinal),
       usuarioId: reserva.usuarioId || null,
       pagado: false,
       canchaId: cancha._id
@@ -303,16 +240,6 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     res.send('Error al confirmar y registrar reserva.');
   }
 });
-
-
-    console.log(`✅ Turno creado para ${reserva.emailContacto} en cancha ${cancha.nombre}`);
-    res.send('✅ ¡Reserva confirmada y registrada correctamente! Te esperamos en la cancha.');
-  } catch (error) {
-    console.error('❌ Error en /reservas/confirmar:', error);
-    res.send('Error al confirmar y registrar reserva.');
-  }
-});
-
 
 // ===============================
 // Reenviar correo por ID
@@ -477,27 +404,6 @@ app.put('/club/:email/access-token', async (req, res) => {
 // ===============================
 // Reservar turno
 // ===============================
-
-function normalizarTelefono(tel) {
-  if (!tel) return null;
-
-  let numero = String(tel).replace(/\D/g, ''); // dejar solo números
-
-  if (numero.startsWith("0")) numero = numero.slice(1);
-
-  // si empieza con 54 pero no con 549 → convertir a 549
-  if (numero.startsWith("54") && !numero.startsWith("549")) {
-    numero = "9" + numero.slice(2);
-  }
-
-  // si todavía no empieza con 549 → agregarlo
-  if (!numero.startsWith("549")) {
-    numero = "549" + numero;
-  }
-
-  return numero;
-}
-
 app.post(
   '/reservar-turno',
   celebrate({
@@ -510,9 +416,7 @@ app.post(
       usuarioReservado: Joi.string().max(100).required(),
       emailReservado: Joi.string().email().required(),
       metodoPago: Joi.string().valid('online', 'efectivo').required(),
-      canchaId: Joi.string().required(),
-      telefonoReservado: Joi.string().min(6).max(30).required(),
-
+      canchaId: Joi.string().required()
     })
   }),
   async (req, res) => {
@@ -545,10 +449,6 @@ app.post(
           precio: precioCalculado,
           usuarioReservado, emailReservado,
           usuarioId: usuario?._id,
-          telefonoReservado: normalizarTelefono(
-  req.body.telefonoReservado || usuario?.telefono || null
-),
-
           pagado: false, canchaId
         });
         await turno.save();
@@ -1150,11 +1050,8 @@ app.get('/reservas/:clubEmail', async (req, res) => {
         usuarioNombre: r.usuarioDoc ? r.usuarioDoc.nombre : "",
         usuarioApellido: r.usuarioDoc ? r.usuarioDoc.apellido : "",
         usuarioEmail: r.usuarioDoc ? r.usuarioDoc.email : "",
-     usuarioTelefono:
-  r.usuarioDoc?.telefono ||
-  r.telefonoReservado ||
-  null,
-};
+        usuarioTelefono: r.usuarioDoc ? r.usuarioDoc.telefono : "",
+      };
     });
 
     res.json(reservasConNombre);
