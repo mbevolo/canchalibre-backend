@@ -111,25 +111,25 @@ const Reserva = require('./models/Reserva');
 // ===============================
 // Crear reserva pendiente y enviar email de confirmación
 // ===============================
-try {
+app.post('/reservas/hold', async (req, res) => {
+  try {
     const { canchaId, fecha, hora, usuarioId, email } = req.body;
 
     if (!canchaId || !fecha || !hora || !email) {
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
     }
 
-    // obtenemos teléfono del usuario logueado (B)
+    // 👉 ACA ESTA EL await CORRECTO, DENTRO DE async
     let usuarioTelefono = null;
     if (usuarioId) {
       const usuario = await Usuario.findById(usuarioId);
       if (usuario && usuario.telefono) {
-        usuarioTelefono = usuario.telefono; // ✔ guardamos el teléfono en la reserva
+        usuarioTelefono = usuario.telefono;
       }
     }
 
-    // Código de verificación + expiración
     const codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60000); // 10 minutos
+    const expiresAt = new Date(Date.now() + 10 * 60000);
 
     const reserva = new Reserva({
       canchaId,
@@ -137,7 +137,7 @@ try {
       hora,
       usuarioId,
       emailContacto: email,
-      usuarioTelefono,     // 👈 AGREGADO
+      usuarioTelefono, // ✔ SE GUARDA EL TELÉFONO
       estado: 'PENDING',
       codigoOTP,
       expiresAt
@@ -159,10 +159,12 @@ try {
     );
 
     res.json({ mensaje: 'Te enviamos un email para confirmar tu reserva.', reservaId: reserva._id });
-} catch (error) {
+
+  } catch (error) {
     console.error('❌ Error en /reservas/hold:', error);
     res.status(500).json({ error: 'Error al crear reserva pendiente.' });
-}
+  }
+});
 
 
 // ===============================
