@@ -1,4 +1,6 @@
 require('dotenv').config();
+console.log("DEBUG FRONT_URL:", process.env.FRONT_URL);
+console.log("DEBUG APP_BASE_URL:", process.env.APP_BASE_URL);
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
