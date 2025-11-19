@@ -226,7 +226,11 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
       precio: cancha.precio,
       usuarioReservado: reserva.emailContacto,
       emailReservado: reserva.emailContacto,
-      telefonoReservado,
+      telefonoReservado: 
+    reserva.usuarioTelefono || 
+    reserva.usuarioId?.telefono || 
+    null,
+
       usuarioId: reserva.usuarioId || null,
       pagado: false,
       canchaId: cancha._id
