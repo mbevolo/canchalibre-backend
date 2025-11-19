@@ -119,13 +119,11 @@ app.post('/reservas/hold', async (req, res) => {
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
     }
 
-    // 👉 ACA ESTA EL await CORRECTO, DENTRO DE async
+    // ➤ obtener teléfono del usuario logueado
     let usuarioTelefono = null;
     if (usuarioId) {
       const usuario = await Usuario.findById(usuarioId);
-      if (usuario && usuario.telefono) {
-        usuarioTelefono = usuario.telefono;
-      }
+      if (usuario?.telefono) usuarioTelefono = usuario.telefono;
     }
 
     const codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
@@ -137,7 +135,7 @@ app.post('/reservas/hold', async (req, res) => {
       hora,
       usuarioId,
       emailContacto: email,
-      usuarioTelefono, // ✔ SE GUARDA EL TELÉFONO
+      usuarioTelefono,   // 👈 AGREGADO
       estado: 'PENDING',
       codigoOTP,
       expiresAt
@@ -165,6 +163,7 @@ app.post('/reservas/hold', async (req, res) => {
     res.status(500).json({ error: 'Error al crear reserva pendiente.' });
   }
 });
+
 
 
 // ===============================
@@ -260,19 +259,47 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     await reserva.save();
 
     // Creo el turno definitivo
-    const nuevoTurno = new Turno({
-      deporte: cancha.deporte,
-      fecha: reserva.fecha,
-      hora: reserva.hora,
-      club: cancha.clubEmail,
-      precio: precioTurno,
-      usuarioReservado: reserva.emailContacto,  // de momento usamos el mail como identificador visible
-      emailReservado: reserva.emailContacto,
-      telefonoReservado: telefono || null,
-      usuarioId: reserva.usuarioId ? reserva.usuarioId._id : null,
-      pagado: false,
-      canchaId: cancha._id
-    });
+// obtener teléfono final
+let telefonoFinal = null;
+
+// si la reserva tiene usuarioTelefono, lo usamos
+if (reserva.usuarioTelefono) {
+  telefonoFinal = reserva.usuarioTelefono;
+}
+
+// si el usuario estaba logueado y tiene teléfono, lo usamos
+else if (reserva.usuarioId && reserva.usuarioId.telefono) {
+  telefonoFinal = reserva.usuarioId.telefono;
+}
+
+// normalizar formato 549...
+function normalizarTelefono(tel) {
+  if (!tel) return null;
+  let numero = String(tel).replace(/\D/g, '');
+  if (numero.startsWith("0")) numero = numero.slice(1);
+  if (numero.startsWith("54") && !numero.startsWith("549")) {
+    numero = "9" + numero.slice(2);
+  }
+  if (!numero.startsWith("549")) numero = "549" + numero;
+  return numero;
+}
+
+const nuevoTurno = new Turno({
+  deporte: cancha.deporte,
+  fecha: reserva.fecha,
+  hora: reserva.hora,
+  club: clubEmail,
+  precio: cancha.precio,
+  usuarioReservado: reserva.emailContacto,
+  emailReservado: reserva.emailContacto,
+
+  telefonoReservado: normalizarTelefono(telefonoFinal),  // 👈 AHORA SÍ SE GUARDA
+
+  usuarioId: reserva.usuarioId || null,
+  pagado: false,
+  canchaId: cancha._id
+});
+
 
     await nuevoTurno.save();
 
