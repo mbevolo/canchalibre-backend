@@ -129,7 +129,7 @@ app.post('/reservas/hold', async (req, res) => {
       <p>El enlace vence en 10 minutos.</p>
     `;
 
-    await sendMail(email, 'Confirmá tu reserva en TurnoLibre', html);
+    await sendMail(email, 'Confirmá tu reserva en CanchaLibre', html);
 
     res.json({ mensaje: 'Te enviamos un email para confirmar tu reserva.', reservaId: reserva._id });
   } catch (error) {
@@ -167,7 +167,7 @@ const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&
       <p><a href="${link}">${link}</a></p>
     `;
 
-    await sendMail(email, 'Confirmá tu reserva en TurnoLibre', html);
+    await sendMail(email, 'Confirmá tu reserva en CanchaLibre', html);
 
     res.json({ mensaje: 'Correo reenviado correctamente.' });
   } catch (error) {
@@ -244,7 +244,7 @@ app.post('/reservas/:id/reenviar', async (req, res) => {
       <p><a href="${link}">${link}</a></p>
     `;
 
-    await sendMail(reserva.emailContacto, 'Confirmá tu reserva en TurnoLibre', html);
+    await sendMail(reserva.emailContacto, 'Confirmá tu reserva en CanchaLibre', html);
 
     res.json({ mensaje: 'Correo reenviado correctamente.' });
   } catch (error) {
@@ -1161,7 +1161,7 @@ app.post('/registrar', async (req, res) => {
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif">
-        <h2>¡Bienvenido/a a TurnoLibre!</h2>
+        <h2>¡Bienvenido/a a CanchaLibre!</h2>
         <p>Para activar tu cuenta, por favor verificá tu email haciendo clic en el botón:</p>
         <p>
           <a href="${link}" 
@@ -1177,7 +1177,7 @@ app.post('/registrar', async (req, res) => {
     `;
 
     try {
-      await sendMail(email, 'Verificá tu email en TurnoLibre', html);
+      await sendMail(email, 'Verificá tu email en CanchaLibre', html);
     } catch (e) {
       console.error('❌ Error enviando email de verificación:', e);
     }
@@ -1242,14 +1242,14 @@ app.post('/reenviar-verificacion', async (req, res) => {
     user.emailVerifyExpires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 horas
     await user.save();
 
-    const verifyLink = `https://turnolibre.com.ar/verificar-email?token=${token}`;
+    const verifyLink = `https://canchalibre.ar/verificar-email?token=${token}`;
 console.log('[DEV] Link de verificación:', verifyLink);
 
     // Envío (si SMTP no está configurado, utils/email.js lo simula y no rompe)
     try {
 await sendMail(
   email,
-  'Verificá tu email - TurnoLibre',
+  'Verificá tu email - CanchaLibre',
   `<p>Hola ${user.nombre || ''},</p>
    <p>Confirmá tu correo haciendo click aquí:</p>
    <p><a href="${verifyLink}">${verifyLink}</a></p>`
@@ -1506,11 +1506,11 @@ app.post('/recuperar', async (req, res) => {
     usuario.resetTokenExp = new Date(Date.now() + 3600000); // 1 hora
     await usuario.save();
 
-    const link = `https://turnolibre.com.ar/reset.html?token=${token}&tipo=usuario`;
+    const link = `https://canchalibre.ar/reset.html?token=${token}&tipo=usuario`;
 
     await sendMail(
   usuario.email,
-  'Recuperar contraseña - TurnoLibre',
+  'Recuperar contraseña - CanchaLibre',
   `
     <h2>Recuperación de contraseña</h2>
     <p>Hacé clic en el siguiente enlace para restablecer tu contraseña:</p>
@@ -1573,11 +1573,11 @@ app.post('/recuperar-club', async (req, res) => {
     club.resetTokenExp = new Date(Date.now() + 3600000); // 1 hora
     await club.save();
 
-    const link = `https://turnolibre.com.ar/reset.html?token=${token}&tipo=club`;
+    const link = `https://canchalibre.ar/reset.html?token=${token}&tipo=club`;
 
 await sendMail(
   club.email,
-  'Recuperar contraseña - TurnoLibre (Club)',
+  'Recuperar contraseña - CanchaLibre (Club)',
   `
     <h2>Recuperación de contraseña</h2>
     <p>Hacé clic en el siguiente enlace para restablecer tu contraseña del club:</p>
@@ -1650,8 +1650,8 @@ app.get('/verificar-email', async (req, res) => {
 
   const redirectUrl =
   tipo === 'club'
-    ? `https://turnolibre.com.ar/login-club.html?verified=1`
-    : `https://turnolibre.com.ar/login.html?verified=1`;
+    ? `https://canchalibre.ar/login-club.html?verified=1`
+    : `https://canchalibre.ar/login.html?verified=1`;
 
 
     return res.redirect(redirectUrl);
