@@ -120,13 +120,47 @@ app.post('/reservas/hold', async (req, res) => {
     });
     await reserva.save();
 
-  const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
+    // 🟦 Traemos info de cancha y club para mostrar en el mail
+    const cancha = await Cancha.findById(canchaId);
+    let club = null;
+    if (cancha && cancha.clubEmail) {
+      club = await Club.findOne({ email: cancha.clubEmail });
+    }
+
+    // 🟦 Calculamos el precio usando tu helper de precio nocturno
+    let precioCalculado = null;
+    try {
+      const [Y, M, D] = fecha.split('-').map(Number); // asume YYYY-MM-DD
+      const [h, m] = hora.split(':').map(Number);
+      const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
+      if (cancha) {
+        precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
+      }
+    } catch (e) {
+      console.error('⚠️ No se pudo calcular precio para el mail de reserva:', e);
+    }
+
+    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
 
     const html = `
-      <h2>Confirmación de reserva</h2>
-      <p>Confirmá tu reserva haciendo clic en el siguiente enlace:</p>
+      <h2>Confirmación de tu reserva</h2>
+
+      <p>Estos son los datos de tu reserva pendiente:</p>
+      <ul>
+        <li><strong>Club:</strong> ${club ? club.nombre : 'A confirmar'}</li>
+        <li><strong>Cancha:</strong> ${cancha ? cancha.nombre : 'Sin nombre'}</li>
+        <li><strong>Deporte:</strong> ${cancha ? cancha.deporte : ''}</li>
+        <li><strong>Fecha:</strong> ${fecha}</li>
+        <li><strong>Hora:</strong> ${hora}</li>
+        ${precioCalculado !== null ? `<li><strong>Precio estimado:</strong> $${precioCalculado}</li>` : ''}
+      </ul>
+
+      <hr/>
+
+      <p>Para confirmar la reserva, hacé clic en el siguiente enlace (vence en 10 minutos):</p>
       <p><a href="${link}">${link}</a></p>
-      <p>El enlace vence en 10 minutos.</p>
+
+      <p>Si no realizaste esta reserva, podés ignorar este mensaje.</p>
     `;
 
     await sendMail(email, 'Confirmá tu reserva en CanchaLibre', html);
@@ -159,11 +193,43 @@ app.post('/reservas/reenviar-confirmacion', async (req, res) => {
       return res.status(400).json({ error: 'El enlace anterior expiró. Volvé a reservar.' });
     }
 
-const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
+    // 🟦 Info de cancha y club
+    const cancha = await Cancha.findById(reserva.canchaId);
+    let club = null;
+    if (cancha && cancha.clubEmail) {
+      club = await Club.findOne({ email: cancha.clubEmail });
+    }
+
+    // 🟦 Calcular precio estimado
+    let precioCalculado = null;
+    try {
+      const [Y, M, D] = String(reserva.fecha).split('-').map(Number); // asume YYYY-MM-DD
+      const [h, m] = String(reserva.hora).split(':').map(Number);
+      const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
+      if (cancha) {
+        precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
+      }
+    } catch (e) {
+      console.error('⚠️ No se pudo calcular precio en /reservas/reenviar-confirmacion:', e);
+    }
+
+    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
 
     const html = `
-      <h2>Reenvío de confirmación</h2>
-      <p>Hacé clic en el siguiente enlace para confirmar tu reserva:</p>
+      <h2>Reenvío de confirmación de tu reserva</h2>
+      <p>Estos son los datos de tu reserva pendiente:</p>
+      <ul>
+        <li><strong>Club:</strong> ${club ? club.nombre : 'A confirmar'}</li>
+        <li><strong>Cancha:</strong> ${cancha ? cancha.nombre : 'Sin nombre'}</li>
+        <li><strong>Deporte:</strong> ${cancha ? cancha.deporte : ''}</li>
+        <li><strong>Fecha:</strong> ${reserva.fecha}</li>
+        <li><strong>Hora:</strong> ${reserva.hora}</li>
+        ${precioCalculado !== null ? `<li><strong>Precio estimado:</strong> $${precioCalculado}</li>` : ''}
+      </ul>
+
+      <hr/>
+
+      <p>Para confirmar la reserva, hacé clic en el siguiente enlace (si el enlace original sigue vigente):</p>
       <p><a href="${link}">${link}</a></p>
     `;
 
@@ -175,6 +241,7 @@ const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&
     res.status(500).json({ error: 'Error al reenviar el correo.' });
   }
 });
+
 
 
 // Confirmar reserva desde el enlace del correo
@@ -232,15 +299,48 @@ app.post('/reservas/:id/reenviar', async (req, res) => {
       return res.status(400).json({ error: 'Solo se pueden reenviar reservas pendientes.' });
     }
 
+    // Renovar vencimiento y OTP
     reserva.expiresAt = new Date(Date.now() + 10 * 60000);
     reserva.codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
     await reserva.save();
 
+    // 🟦 Info de cancha y club
+    const cancha = await Cancha.findById(reserva.canchaId);
+    let club = null;
+    if (cancha && cancha.clubEmail) {
+      club = await Club.findOne({ email: cancha.clubEmail });
+    }
+
+    // 🟦 Calcular precio estimado
+    let precioCalculado = null;
+    try {
+      const [Y, M, D] = String(reserva.fecha).split('-').map(Number);
+      const [h, m] = String(reserva.hora).split(':').map(Number);
+      const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
+      if (cancha) {
+        precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
+      }
+    } catch (e) {
+      console.error('⚠️ No se pudo calcular precio en /reservas/:id/reenviar:', e);
+    }
+
     const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
 
     const html = `
-      <h2>Confirmación de reserva</h2>
-      <p>Hacé clic en este enlace para confirmar tu reserva:</p>
+      <h2>Confirmación de tu reserva</h2>
+      <p>Estos son los datos de tu reserva pendiente:</p>
+      <ul>
+        <li><strong>Club:</strong> ${club ? club.nombre : 'A confirmar'}</li>
+        <li><strong>Cancha:</strong> ${cancha ? cancha.nombre : 'Sin nombre'}</li>
+        <li><strong>Deporte:</strong> ${cancha ? cancha.deporte : ''}</li>
+        <li><strong>Fecha:</strong> ${reserva.fecha}</li>
+        <li><strong>Hora:</strong> ${reserva.hora}</li>
+        ${precioCalculado !== null ? `<li><strong>Precio estimado:</strong> $${precioCalculado}</li>` : ''}
+      </ul>
+
+      <hr/>
+
+      <p>Hacé clic en este enlace para confirmar tu reserva (vence en 10 minutos):</p>
       <p><a href="${link}">${link}</a></p>
     `;
 
@@ -252,6 +352,7 @@ app.post('/reservas/:id/reenviar', async (req, res) => {
     res.status(500).json({ error: 'Error al reenviar correo de confirmación.' });
   }
 });
+
 
 
 // 🗑️ Cancelar una reserva pendiente
