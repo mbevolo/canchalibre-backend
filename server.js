@@ -666,13 +666,23 @@ app.post('/login-club', async (req, res) => {
     console.log('📩 Datos recibidos:', { email, password });
 
     const club = await Club.findOne({ email });
-    if (!club) return res.status(400).json({ error: 'Club no encontrado' });
+    if (!club) {
+      return res.status(400).json({ error: 'Club no encontrado' });
+    }
+
+    // 🔐 Verificar que el email esté confirmado
+    if (!club.emailVerificado) {
+      return res.status(403).json({
+        error: 'Debés verificar tu correo antes de iniciar sesión. Revisá tu email de verificación.'
+      });
+    }
 
     const match = await bcrypt.compare(password, club.passwordHash);
-    if (!match) return res.status(401).json({ error: 'Contraseña incorrecta' });
+    if (!match) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
 
-    // ✅ Generar token JWT
-    const jwt = require('jsonwebtoken');
+    // ✅ Generar token JWT (ya lo tenés requerido arriba)
     const token = jwt.sign(
       { clubId: club._id },
       process.env.JWT_SECRET,
@@ -692,6 +702,7 @@ app.post('/login-club', async (req, res) => {
     res.status(500).json({ error: 'Error al iniciar sesión del club' });
   }
 });
+
 
 app.get('/verificar-club', async (req, res) => {
   try {
