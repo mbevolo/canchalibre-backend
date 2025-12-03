@@ -1156,7 +1156,7 @@ app.post('/registrar', async (req, res) => {
     await nuevoUsuario.save();
 
     // Enviar email con Brevo
-  const link = `${process.env.FRONT_URL}/verificar-email.html?token=${token}&tipo=usuario`;
+const link = `https://canchalibre.ar/verificar-email.html?token=${token}&tipo=usuario`;
 
 
     const html = `
@@ -1235,36 +1235,35 @@ app.post('/reenviar-verificacion', async (req, res) => {
 
     const user = await Usuario.findOne({ email });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-    if (user.emailVerified) return res.json({ ok: true, mensaje: 'Ya estaba verificado' });
+    if (user.emailVerificado) return res.json({ ok: true, mensaje: 'Ya estaba verificado' });
 
-    const token = crypto.randomBytes(24).toString('hex');
-    user.emailVerifyToken = token;
-    user.emailVerifyExpires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 horas
+    // Nuevo token unificado
+    const token = crypto.randomBytes(32).toString('hex');
+    user.tokenVerificacion = token;
+    user.tokenVerificacionExpira = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
     await user.save();
 
-    const verifyLink = `https://canchalibre.ar/verificar-email.html?token=${token}`;
-console.log('[DEV] Link de verificación:', verifyLink);
+    // Link correcto
+    const verifyLink = `https://canchalibre.ar/verificar-email.html?token=${token}&tipo=usuario`;
 
-    // Envío (si SMTP no está configurado, utils/email.js lo simula y no rompe)
-    try {
-await sendMail(
-  email,
-  'Verificá tu email - CanchaLibre',
-  `<p>Hola ${user.nombre || ''},</p>
-   <p>Confirmá tu correo haciendo click aquí:</p>
-   <p><a href="${verifyLink}">${verifyLink}</a></p>`
-);
+    console.log('[DEV] Link de verificación:', verifyLink);
 
-    } catch (e) {
-      console.warn('[email] No se pudo enviar, seguimos igual:', e.message);
-    }
+    await sendMail(
+      email,
+      'Verificá tu email - CanchaLibre',
+      `<p>Hola ${user.nombre || ''},</p>
+       <p>Confirmá tu correo haciendo click aquí:</p>
+       <p><a href="${verifyLink}">${verifyLink}</a></p>`
+    );
 
     return res.json({ ok: true });
+
   } catch (e) {
     console.error('POST /reenviar-verificacion', e);
     return res.status(500).json({ error: 'Error interno' });
   }
 });
+
 
 
 
