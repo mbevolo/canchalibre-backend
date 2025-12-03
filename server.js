@@ -1242,7 +1242,7 @@ app.post('/reenviar-verificacion', async (req, res) => {
     user.emailVerifyExpires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 horas
     await user.save();
 
-    const verifyLink = `https://canchalibre.ar/verificar-email?token=${token}`;
+    const verifyLink = `https://canchalibre.ar/verificar-email.html?token=${token}`;
 console.log('[DEV] Link de verificación:', verifyLink);
 
     // Envío (si SMTP no está configurado, utils/email.js lo simula y no rompe)
