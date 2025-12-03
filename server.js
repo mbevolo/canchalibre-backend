@@ -703,6 +703,161 @@ app.post('/login-club', async (req, res) => {
   }
 });
 
+app.post('/club/reenviar-verificacion', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Falta el email.' });
+    }
+
+    const club = await Club.findOne({ email });
+    if (!club) {
+      return res.status(404).json({ error: 'No existe un club registrado con ese email.' });
+    }
+
+    // ✅ Si ya está verificado, no tiene sentido reenviar
+    if (club.emailVerificado) {
+      return res.status(400).json({ error: 'Este correo ya fue verificado. Ya podés iniciar sesión.' });
+    }
+
+    // ✅ Generar nuevo token y nueva expiración (24hs)
+    const token = crypto.randomBytes(32).toString('hex');
+    const expira = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 horas
+
+    club.tokenVerificacion = token;
+    club.tokenVerificacionExpira = expira;
+    await club.save();
+
+    // ✅ Armar link de verificación (usamos FRONT_URL como en el registro)
+    const linkVerificacion = `${process.env.FRONT_URL}/verificar-club.html?token=${token}&email=${encodeURIComponent(email)}`;
+
+    const html = `
+      <h2>Verificá tu cuenta de club</h2>
+      <p>Hola ${club.nombre} 👋</p>
+      <p>Te enviamos nuevamente el enlace para verificar tu email y activar el acceso al panel de clubes de CanchaLibre.</p>
+      <p><a href="${linkVerificacion}" style="color:#2c7be5;">Verificar cuenta</a></p>
+      <p>Si no creaste esta cuenta, podés ignorar este mensaje.</p>
+    `;
+
+    await sendMail(email, 'Reenvío de verificación - CanchaLibre', html);
+
+    res.json({
+      ok: true,
+      mensaje: 'Te reenviamos el mail de verificación. Revisá tu bandeja de entrada o el correo no deseado.'
+    });
+
+  } catch (error) {
+    console.error('❌ Error en /club/reenviar-verificacion:', error);
+    res.status(500).json({ error: 'Error al reenviar el mail de verificación.' });
+  }
+});
+
+app.post('/club/olvide-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Falta el email.' });
+    }
+
+    const club = await Club.findOne({ email });
+    if (!club) {
+      // Por seguridad, podemos devolver un mensaje genérico
+      return res.status(404).json({ error: 'No existe un club registrado con ese email.' });
+    }
+
+    // ✅ Generar token de reseteo (por ejemplo, válido 1 hora)
+    const token = crypto.randomBytes(32).toString('hex');
+    const expira = new Date(Date.now() + 1000 * 60 * 60); // 1 hora
+
+    club.resetToken = token;
+    club.resetTokenExp = expira;
+    await club.save();
+
+    // ✅ Link al frontend para cambiar la contraseña del club
+    const linkReset = `${process.env.FRONT_URL}/reset-club.html?token=${token}&email=${encodeURIComponent(email)}`;
+
+    const html = `
+      <h2>Recuperación de contraseña</h2>
+      <p>Hola ${club.nombre} 👋</p>
+      <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta de club en CanchaLibre.</p>
+      <p>Si fuiste vos, hacé clic en el siguiente enlace para crear una nueva contraseña:</p>
+      <p><a href="${linkReset}" style="color:#2c7be5;">Restablecer contraseña</a></p>
+      <p>Este enlace es válido por 1 hora.</p>
+      <p>Si no fuiste vos, podés ignorar este mensaje.</p>
+    `;
+
+    await sendMail(email, 'Recuperación de contraseña - CanchaLibre', html);
+
+    res.json({
+      ok: true,
+      mensaje: 'Te enviamos un email con instrucciones para restablecer tu contraseña.'
+    });
+
+  } catch (error) {
+    console.error('❌ Error en /club/olvide-password:', error);
+    res.status(500).json({ error: 'Error al procesar la solicitud de recuperación.' });
+  }
+});
+
+app.post('/club/reset-password', async (req, res) => {
+  try {
+    const { email, token, nuevaPassword } = req.body;
+
+    if (!email || !token || !nuevaPassword) {
+      return res.status(400).json({ error: 'Faltan datos obligatorios.' });
+    }
+
+    // ✅ Validar complejidad igual que en /registro-club
+    if (
+      !nuevaPassword ||
+      nuevaPassword.length < 6 ||
+      !/\d/.test(nuevaPassword) ||
+      !/[A-Za-z]/.test(nuevaPassword)
+    ) {
+      return res.status(400).json({
+        error: 'La contraseña debe tener al menos 6 caracteres e incluir una letra y un número.'
+      });
+    }
+
+    const club = await Club.findOne({ email });
+
+    if (!club) {
+      return res.status(404).json({ error: 'Club no encontrado.' });
+    }
+
+    // 🔐 Validar token y expiración
+    if (
+      !club.resetToken ||
+      club.resetToken !== token ||
+      !club.resetTokenExp ||
+      club.resetTokenExp < new Date()
+    ) {
+      return res.status(400).json({ error: 'Token inválido o expirado.' });
+    }
+
+    // ✅ Actualizar contraseña
+    const hash = await bcrypt.hash(nuevaPassword, 10);
+    club.passwordHash = hash;
+
+    // ✅ Limpiar token de reseteo
+    club.resetToken = null;
+    club.resetTokenExp = null;
+
+    await club.save();
+
+    res.json({
+      ok: true,
+      mensaje: 'Contraseña actualizada correctamente. Ya podés iniciar sesión con tu nueva contraseña.'
+    });
+
+  } catch (error) {
+    console.error('❌ Error en /club/reset-password:', error);
+    res.status(500).json({ error: 'Error al restablecer la contraseña.' });
+  }
+});
+
 
 app.get('/verificar-club', async (req, res) => {
   try {
