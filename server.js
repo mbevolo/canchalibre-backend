@@ -693,6 +693,46 @@ app.post('/login-club', async (req, res) => {
   }
 });
 
+app.get('/verificar-club', async (req, res) => {
+  try {
+    const { email, token } = req.query;
+
+    if (!email || !token) {
+      return res.status(400).json({ error: 'Faltan parámetros.' });
+    }
+
+    const club = await Club.findOne({ email });
+
+    if (!club) {
+      return res.status(404).json({ error: 'Club no encontrado.' });
+    }
+
+    // 🔍 Validar token
+    if (
+      !club.tokenVerificacion ||
+      club.tokenVerificacion !== token ||
+      !club.tokenVerificacionExpira ||
+      club.tokenVerificacionExpira < new Date()
+    ) {
+      return res.status(400).json({ error: 'Token inválido o expirado.' });
+    }
+
+    // ✨ Marcar como verificado
+    club.emailVerificado = true;
+    club.tokenVerificacion = null;
+    club.tokenVerificacionExpira = null;
+    club.emailVerificadoEn = new Date();
+
+    await club.save();
+
+    res.json({ ok: true, mensaje: 'Cuenta verificada correctamente.' });
+
+  } catch (error) {
+    console.error('❌ Error en /verificar-club:', error);
+    res.status(500).json({ error: 'Error al verificar cuenta.' });
+  }
+});
+
 
 
 
