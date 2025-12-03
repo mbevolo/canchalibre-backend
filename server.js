@@ -550,7 +550,7 @@ app.post('/registro-club', async (req, res) => {
     localidad
   } = req.body;
 
-    // ✅ Validar complejidad de la contraseña
+  // ✅ Validar complejidad de la contraseña
   if (!password || password.length < 6 || !/\d/.test(password) || !/[A-Za-z]/.test(password)) {
     return res.status(400).json({
       error: 'La contraseña debe tener al menos 6 caracteres e incluir una letra y un número.'
@@ -582,7 +582,11 @@ app.post('/registro-club', async (req, res) => {
     const latNum = parseFloat(latitud);
     const lonNum = parseFloat(longitud);
 
-    // ✅ Crear y guardar nuevo club con el campo correcto (passwordHash)
+    // ✅ Generar token de verificación (24 hs de validez)
+    const token = crypto.randomBytes(32).toString('hex');
+    const expira = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24 horas
+
+    // ✅ Crear y guardar nuevo club con campos de verificación
     const nuevoClub = new Club({
       email,
       passwordHash: hash,
@@ -592,12 +596,32 @@ app.post('/registro-club', async (req, res) => {
       latitud: latNum,
       longitud: lonNum,
       provincia,
-      localidad
+      localidad,
+      emailVerificado: false,
+      tokenVerificacion: token,
+      tokenVerificacionExpira: expira
     });
 
     await nuevoClub.save();
 
-    res.json({ mensaje: 'Club registrado correctamente' });
+    // ✅ Armar link de verificación (FRONT_URL ya lo usás en otros lados)
+    const linkVerificacion = `${process.env.FRONT_URL}/verificar-club.html?token=${token}&email=${encodeURIComponent(email)}`;
+
+    const html = `
+      <h2>Verificá tu cuenta de club</h2>
+      <p>Hola ${nombre} 👋</p>
+      <p>Para activar tu acceso al panel de clubes de CanchaLibre, verificá tu email haciendo clic en el siguiente enlace:</p>
+      <p><a href="${linkVerificacion}" style="color:#2c7be5;">Verificar cuenta</a></p>
+      <p>Si no creaste esta cuenta, podés ignorar este mensaje.</p>
+    `;
+
+    // ✅ Usamos la misma función de envío de mail que ya tenés configurada (Brevo)
+    await sendMail(email, 'Verificación de cuenta - CanchaLibre', html);
+
+    // ✅ Mensaje al frontend
+    res.json({
+      mensaje: 'Club registrado. Revisá tu email para verificar la cuenta antes de iniciar sesión.'
+    });
   } catch (error) {
     console.error('❌ Error en /registro-club:', error);
 
