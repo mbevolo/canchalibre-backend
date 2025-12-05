@@ -500,16 +500,38 @@ app.get('/reservas-usuario/:email', async (req, res) => {
 
 
 
-// ✅ NUEVA RUTA: guardar access token del club
+// ✅ NUEVA RUTA: guardar access token del club (con logs)
 app.put('/club/:email/access-token', async (req, res) => {
     try {
+        const email = (req.params.email || '').trim().toLowerCase();
         const { accessToken } = req.body;
-        await Club.findOneAndUpdate({ email: req.params.email }, { mercadoPagoAccessToken: accessToken });
+
+        console.log("📩 Solicitud de guardado Access Token:");
+        console.log("➡️ Email recibido:", email);
+        console.log("➡️ Token recibido:", accessToken);
+
+        const club = await Club.findOneAndUpdate(
+            { email },
+            { mercadoPagoAccessToken: accessToken },
+            { new: true }
+        );
+
+        if (!club) {
+            console.log("❌ No se encontró un club con ese email.");
+            return res.status(404).json({ error: 'No se encontró un club con ese email' });
+        }
+
+        console.log("✅ Token guardado correctamente para el club:");
+        console.log("✔️ Nuevo valor mercadoPagoAccessToken:", club.mercadoPagoAccessToken);
+
         res.json({ mensaje: 'Access Token guardado correctamente' });
+
     } catch (error) {
+        console.error("🔥 Error al guardar Access Token:", error);
         res.status(500).json({ error: 'Error al guardar Access Token' });
     }
 });
+
 
 // ✅ NUEVA RUTA: reservar turno
 app.post(
