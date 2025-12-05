@@ -533,23 +533,37 @@ app.post(
 
       let turno;
       if (turnoExistente) {
+        // ✅ ACTUALIZAR TURNO YA GENERADO
         turnoExistente.usuarioReservado = usuarioReservado;
-        turnoExistente.emailReservado = emailReservado;
-        turnoExistente.pagado = false;
-        turnoExistente.canchaId = canchaId;
-        turnoExistente.precio = precioCalculado;
+        turnoExistente.emailReservado   = emailReservado;
+        turnoExistente.pagado           = false;
+        turnoExistente.canchaId         = canchaId;
+        turnoExistente.precio           = precioCalculado;
+
+        // 👈 NUEVO: guardar también el usuarioId
+        if (usuario?._id) {
+          turnoExistente.usuarioId = usuario._id;
+        }
+
         await turnoExistente.save();
         turno = turnoExistente;
       } else {
+        // ✅ CREAR TURNO NUEVO
         turno = new Turno({
-          deporte, fecha, club, hora,
+          deporte,
+          fecha,
+          club,
+          hora,
           precio: precioCalculado,
-          usuarioReservado, emailReservado,
-          usuarioId: usuario?._id,
-          pagado: false, canchaId
+          usuarioReservado,
+          emailReservado,
+          usuarioId: usuario?._id,   // ya estaba bien
+          pagado: false,
+          canchaId
         });
         await turno.save();
       }
+
 
 if (metodoPago === 'online') {
   const clubData = await Club.findOne({ email: club });
