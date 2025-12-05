@@ -263,8 +263,21 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     const cancha = await Cancha.findById(reserva.canchaId);
     if (!cancha) return res.send('⚠️ Cancha no encontrada para esta reserva.');
 
-    const clubEmail = cancha.clubEmail; // email del club dueño de la cancha
+    const clubEmail = cancha.clubEmail;
     const club = await Club.findOne({ email: clubEmail });
+
+    // 🆕 Intentar vincular al usuario según el email de la reserva
+    let usuario = null;
+    try {
+      usuario = await Usuario.findOne({ email: reserva.emailContacto });
+      if (usuario) {
+        console.log('🔗 Usuario vinculado a turno en /reservas/confirmar:', usuario.email, usuario.telefono);
+      } else {
+        console.log('ℹ️ No se encontró usuario para', reserva.emailContacto);
+      }
+    } catch (e) {
+      console.error('⚠️ Error buscando usuario en /reservas/confirmar:', e);
+    }
 
     const nuevoTurno = new Turno({
       deporte: cancha.deporte,
@@ -272,16 +285,19 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
       hora: reserva.hora,
       club: clubEmail,
       precio: cancha.precio,
-      usuarioReservado: reserva.emailContacto, // email del usuario
+      usuarioReservado: reserva.emailContacto, // dejamos el mail como antes
       emailReservado: reserva.emailContacto,
-      usuarioId: reserva.usuarioId || null,
+      // 👉 ahora guardamos el usuario si existe
+      usuarioId: reserva.usuarioId || (usuario ? usuario._id : null),
       pagado: false,
-      canchaId: cancha._id
+      canchaId: cancha._id,
+      // opcional, para compatibilidad con código viejo
+      telefonoReservado: usuario?.telefono || undefined
     });
 
     await nuevoTurno.save();
 
-    console.log(`✅ Turno creado para ${reserva.emailContacto} en cancha ${cancha.nombre}`);
+    console.log(`✅ Turno creado para ${reserva.emailContacto} en cancha ${cancha.nombre}. usuarioId=${nuevoTurno.usuarioId}`);
 
     res.send('✅ ¡Reserva confirmada y registrada correctamente! Te esperamos en la cancha.');
   } catch (error) {
@@ -289,6 +305,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     res.send('Error al confirmar y registrar reserva.');
   }
 });
+
 // 📨 Reenviar correo de confirmación de reserva
 app.post('/reservas/:id/reenviar', async (req, res) => {
   try {
