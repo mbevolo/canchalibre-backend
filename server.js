@@ -1335,8 +1335,9 @@ const reservasConNombre = reservasOrdenadas.map((r) => {
     usuarioNombre: r.usuarioDoc ? r.usuarioDoc.nombre : "",
     usuarioApellido: r.usuarioDoc ? r.usuarioDoc.apellido : "",
     usuarioEmail: r.usuarioDoc ? r.usuarioDoc.email : "",
-    usuarioTelefono: r.usuarioDoc ? r.usuarioDoc.telefono : "",
-  };
+    usuarioTelefono: r.usuarioDoc && r.usuarioDoc.telefono
+      ? r.usuarioDoc.telefono
+      : (r.telefonoReservado || ""),  };
 });
 
 
