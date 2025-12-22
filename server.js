@@ -1941,6 +1941,35 @@ app.get('/verificar-email', async (req, res) => {
     res.status(500).send('Error interno al verificar email.');
   }
 });
+app.get('/club-id/:id', async (req, res) => {
+  try {
+    const id = (req.params.id || '').trim();
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    // Traemos el club por _id
+    const club = await Club.findById(id, {
+      email: 1,
+      nombre: 1,
+      provincia: 1,
+      localidad: 1,
+      latitud: 1,
+      longitud: 1,
+      destacado: 1,
+      destacadoHasta: 1,
+      mercadoPagoAccessToken: 1
+    });
+
+    if (!club) return res.status(404).json({ error: 'Club no encontrado' });
+
+    res.json(club);
+  } catch (error) {
+    console.error('❌ Error en GET /club-id/:id:', error);
+    res.status(500).json({ error: 'Error al obtener club por id' });
+  }
+});
 
 
 const PORT = process.env.PORT || 3000;
