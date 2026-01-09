@@ -1118,126 +1118,154 @@ app.patch('/turnos/:id/cancelar', async (req, res) => {
 
 
 app.get('/turnos-generados', async (req, res) => {
-    try {
-        let canchas = await Cancha.find();
-        const turnosReservados = await Turno.find();
-        const { provincia, localidad } = req.query;
+  try {
+    const { provincia, localidad } = req.query;
 
-        if (provincia || localidad) {
-            const filtro = {};
-            if (provincia) filtro.provincia = provincia;
-            if (localidad) filtro.localidad = localidad;
+    // ====== Fecha base (YYYY-MM-DD) y semana Lunes->Domingo ======
+    const fechaBase = req.query.fecha;
 
-            const clubes = await Club.find(filtro);
-            const emailsClubes = clubes.map(c => c.email);
-
-            // Filtrar canchas que pertenezcan a esos clubes
-            canchas = canchas.filter(cancha => emailsClubes.includes(cancha.clubEmail));
-        }
-
-               // 🚩 Nuevo: tomar fecha base del querystring o usar hoy
-let fechaBase = req.query.fecha;
-
-let baseDate;
-if (fechaBase) {
-    // Parse seguro en hora LOCAL (YYYY-MM-DD)
-    const [y, m, d] = fechaBase.split('-').map(Number);
-    baseDate = new Date(y, m - 1, d, 0, 0, 0, 0);
-} else {
-    baseDate = new Date();
-}
-// console.log("✅ baseDate usada:", baseDate.toISOString());
-
-        // baseDate.getDay(): 0=Domingo, 1=Lunes, ..., 6=Sábado
-let monday = new Date(baseDate);
-// Monday-first: 0=lunes, 6=domingo
-const dayNum = (monday.getDay() + 6) % 7;
-monday.setDate(monday.getDate() - dayNum);
-monday.setHours(0, 0, 0, 0);
-
-
-        // Ahora armamos los 7 días de la semana a partir de monday:
-const dias = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday.getTime()); // copiado correctamente
-    d.setDate(d.getDate() + i);
-    return isNaN(d.getTime()) ? null : d; // protección contra fechas inválidas
-}).filter(d => d !== null);
-
-
-        // LOG DE CONTROL:
-        // console.log('Días generados:', dias.map(d => d instanceof Date && !isNaN(d) ? d.toISOString().slice(0, 10) : 'Fecha inválida'));
-
-
-        const todosTurnos = [];
-
-        for (const cancha of canchas) {
-            const clubInfo = await Club.findOne({ email: cancha.clubEmail });
-
-            for (const d of dias) {
-                const fechaStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const diaNombre = quitarAcentos(getDiaNombre(d).toLowerCase().trim());
-const diasDisponibles = (cancha.diasDisponibles || [])
-  .map(x => quitarAcentos(String(x).toLowerCase().trim()));
-
-                if (diasDisponibles.includes(diaNombre)) {
-                    // Duración de turno en minutos (default 60)
-const duracion = Number(cancha.duracionTurno) || 60;
-
-// Pasamos las horas a minutos totales para poder sumar de a "duracion"
-const [dH, dM = 0] = cancha.horaDesde.split(':').map(n => parseInt(n, 10));
-const [hH, hM = 0] = cancha.horaHasta.split(':').map(n => parseInt(n, 10));
-
-const desdeMin = dH * 60 + dM;
-const hastaMin = hH * 60 + hM;
-
-// Recorremos de a "duracion" minutos y solo generamos slots cuyo fin no se pase de "hasta"
-for (let m = desdeMin; m + duracion <= hastaMin; m += duracion) {
-const h = Math.floor(m / 60);
-const min = m % 60;
-const hora = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-
-// reconstruir Date de inicio del slot para evaluar nocturno/diurno
-const inicioDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, min, 0, 0);
-// calcular precio correcto con helper
-const precioCalculado = calcularPrecioTurno(cancha, inicioDate);
-
-const reservado = turnosReservados.find(t =>
-    t.deporte === cancha.deporte &&
-    (t.club === cancha.clubEmail || t.club === cancha.nombre) &&
-    t.fecha === fechaStr &&
-    t.hora === hora &&
-    (t.canchaId ?? '') === cancha._id.toString()
-);
-
-todosTurnos.push({
-    canchaId: cancha._id,
-    nombreCancha: cancha.nombre,
-    deporte: cancha.deporte,
-    club: cancha.clubEmail,
-    fecha: fechaStr,
-    hora,
-    precio: precioCalculado, // 👈 ahora usa nocturno/diurno
-    usuarioReservado: reservado ? reservado.usuarioReservado : null,
-    emailReservado: reservado ? reservado.emailReservado : null,
-    pagado: reservado ? reservado.pagado : false,
-    realId: reservado ? reservado._id : null,
-    latitud: clubInfo ? clubInfo.latitud : null,
-    longitud: clubInfo ? clubInfo.longitud : null,
-    duracionTurno: cancha.duracionTurno || 60
-});
-
-}
-                }
-            }
-        }
-
-        res.json(todosTurnos);
-
-    } catch (error) {
-        console.error('❌ Error en /turnos-generados:', error);
-        res.status(500).json({ error: 'Error al generar turnos' });
+    let baseDate;
+    if (fechaBase) {
+      const [y, m, d] = fechaBase.split('-').map(Number);
+      baseDate = new Date(y, m - 1, d, 0, 0, 0, 0);
+    } else {
+      baseDate = new Date();
+      baseDate.setHours(0, 0, 0, 0);
     }
+
+    let monday = new Date(baseDate);
+    const dayNum = (monday.getDay() + 6) % 7; // 0=lun ... 6=dom
+    monday.setDate(monday.getDate() - dayNum);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    const mondayStr = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+    const sundayStr = `${sunday.getFullYear()}-${String(sunday.getMonth() + 1).padStart(2, '0')}-${String(sunday.getDate()).padStart(2, '0')}`;
+
+    // ====== Filtrar clubes por provincia/localidad (si aplica) ======
+    const filtroClub = {};
+    if (provincia) filtroClub.provincia = provincia;
+    if (localidad) filtroClub.localidad = localidad;
+
+    const clubes = (provincia || localidad)
+      ? await Club.find(filtroClub).select('email nombre latitud longitud').lean()
+      : await Club.find().select('email nombre latitud longitud').lean();
+
+    const clubByEmail = new Map(clubes.map(c => [c.email, c]));
+    const emailsClubes = clubes.map(c => c.email);
+
+    // ====== Traer canchas YA filtradas (evita traer todo y filtrar en memoria) ======
+    const canchasQuery = (provincia || localidad)
+      ? { clubEmail: { $in: emailsClubes } }
+      : {};
+
+    const canchas = await Cancha.find(canchasQuery)
+      .select('_id nombre deporte clubEmail diasDisponibles horaDesde horaHasta duracionTurno precio precioNocturno horaNocturna')
+      .lean();
+
+    const canchaIds = canchas.map(c => c._id);
+
+    // ====== Traer SOLO turnos de esa semana y de esas canchas ======
+    // Nota: fecha está guardada como string "YYYY-MM-DD", así que el rango funciona bien.
+    const turnosReservados = await Turno.find({
+      fecha: { $gte: mondayStr, $lte: sundayStr },
+      canchaId: { $in: canchaIds }
+    })
+      .select('canchaId deporte club fecha hora usuarioReservado emailReservado pagado')
+      .lean();
+
+    // ====== Indexar reservas en Map (O(1)) en vez de .find() por cada slot ======
+    const reservadosPorCanchaFechaHora = new Map();
+    const reservadosLegacy = new Map(); // compatibilidad si alguna reserva vieja dependía de club/deporte
+
+    for (const t of turnosReservados) {
+      const key = `${String(t.canchaId)}|${t.fecha}|${t.hora}`;
+      reservadosPorCanchaFechaHora.set(key, t);
+
+      // fallback legacy (por si hay datos antiguos)
+      const keyLegacy = `${t.deporte}|${t.club}|${t.fecha}|${t.hora}`;
+      reservadosLegacy.set(keyLegacy, t);
+    }
+
+    // ====== Días de la semana ======
+    const dias = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday.getTime());
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+
+    const todosTurnos = [];
+
+    for (const cancha of canchas) {
+      const clubInfo = clubByEmail.get(cancha.clubEmail) || null;
+
+      const diasDisponibles = (cancha.diasDisponibles || [])
+        .map(x => quitarAcentos(String(x).toLowerCase().trim()));
+
+      // Duración de turno en minutos (default 60)
+      const duracion = Number(cancha.duracionTurno) || 60;
+
+      const [dH, dM = 0] = String(cancha.horaDesde).split(':').map(n => parseInt(n, 10));
+      const [hH, hM = 0] = String(cancha.horaHasta).split(':').map(n => parseInt(n, 10));
+
+      const desdeMin = dH * 60 + dM;
+      const hastaMin = hH * 60 + hM;
+
+      for (const d of dias) {
+        const fechaStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const diaNombre = quitarAcentos(getDiaNombre(d).toLowerCase().trim());
+
+        if (!diasDisponibles.includes(diaNombre)) continue;
+
+        for (let m = desdeMin; m + duracion <= hastaMin; m += duracion) {
+          const h = Math.floor(m / 60);
+          const min = m % 60;
+          const hora = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+
+          const inicioDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, min, 0, 0);
+          const precioCalculado = calcularPrecioTurno(cancha, inicioDate);
+
+          // ✅ lookup O(1)
+          const key = `${String(cancha._id)}|${fechaStr}|${hora}`;
+          let reservado = reservadosPorCanchaFechaHora.get(key);
+
+          // fallback legacy por si existiera alguna reserva que no tenía canchaId consistente en el pasado
+          if (!reservado) {
+            const legacy1 = `${cancha.deporte}|${cancha.clubEmail}|${fechaStr}|${hora}`;
+            const legacy2 = clubInfo?.nombre ? `${cancha.deporte}|${clubInfo.nombre}|${fechaStr}|${hora}` : null;
+            reservado = reservadosLegacy.get(legacy1) || (legacy2 ? reservadosLegacy.get(legacy2) : null);
+          }
+
+          todosTurnos.push({
+            canchaId: cancha._id,
+            nombreCancha: cancha.nombre,
+            deporte: cancha.deporte,
+            club: cancha.clubEmail,
+            fecha: fechaStr,
+            hora,
+            precio: precioCalculado,
+            usuarioReservado: reservado ? reservado.usuarioReservado : null,
+            emailReservado: reservado ? reservado.emailReservado : null,
+            pagado: reservado ? reservado.pagado : false,
+            realId: reservado ? reservado._id : null,
+            latitud: clubInfo ? clubInfo.latitud : null,
+            longitud: clubInfo ? clubInfo.longitud : null,
+            duracionTurno: cancha.duracionTurno || 60
+          });
+        }
+      }
+    }
+
+    res.json(todosTurnos);
+  } catch (error) {
+    console.error('❌ Error en /turnos-generados:', error);
+    res.status(500).json({ error: 'Error al generar turnos' });
+  }
 });
+
 
 
 
