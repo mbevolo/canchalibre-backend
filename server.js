@@ -355,60 +355,57 @@ if (metodoFinal !== 'online') {
 }
 
 if (metodoFinal === 'online') {
-  // ✅ IMPORTANTE: ajustamos el token a uno fijo (el del sistema)
-  // (Más adelante podemos hacerlo por token del club)
-  if (!process.env.MP_ACCESS_TOKEN) {
-    return res.send('❌ Falta MP_ACCESS_TOKEN en el backend.');
+
+  // ✅ cobrar en la cuenta del CLUB dueño de la cancha
+  const clubData = await Club.findOne({ email: cancha.clubEmail });
+  if (!clubData || !clubData.mercadoPagoAccessToken) {
+    return res
+      .status(400)
+      .send('❌ El club no tiene configurado su Access Token de MercadoPago.');
   }
 
-  mercadopago.configure({ access_token: process.env.MP_ACCESS_TOKEN });
+  mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
 
+  const preference = {
+    items: [
+      {
+        title: `Reserva CanchaLibre`,
+        quantity: 1,
+        currency_id: 'ARS',
+        unit_price: Number(turno.precio || 0),
+      }
+    ],
 
+    // ✅ IMPORTANTE: que sea el TURNO (así el webhook lo encuentra y marca pagado)
+    external_reference: String(turno._id),
 
-      const preference = {
-        items: [
-          {
-            title: `Reserva CanchaLibre`,
-            quantity: 1,
-            currency_id: 'ARS',
-            unit_price: Number(turno.precio || 0),
-          }
-        ],
-        external_reference: String(reserva._id),
-        back_urls: {
-          success: `${process.env.FRONT_URL}/mp-success.html?reserva=${reserva._id}`,
-          pending: `${process.env.FRONT_URL}/mp-pending.html?reserva=${reserva._id}`,
-          failure: `${process.env.FRONT_URL}/mp-failure.html?reserva=${reserva._id}`
-        },
-        auto_return: 'approved',
-        // ⚠️ Si tu webhook es otro, después lo ajustamos
-notification_url: `https://api.canchalibre.ar/api/mercadopago/webhook`,
-      };
+    back_urls: {
+      success: `${process.env.FRONT_URL}/mp-success.html?turno=${turno._id}`,
+      pending: `${process.env.FRONT_URL}/mp-pending.html?turno=${turno._id}`,
+      failure: `${process.env.FRONT_URL}/mp-failure.html?turno=${turno._id}`
+    },
 
-console.log('🟦 Intentando crear preferencia MP para reserva:', String(reserva._id));
-console.log('🟦 MP token present:', Boolean(process.env.MP_ACCESS_TOKEN));
-console.log('🟦 Precio enviado a MP:', Number(turno?.precio || 0));
+    auto_return: 'approved',
+    notification_url: `https://api.canchalibre.ar/api/mercadopago/webhook`,
+  };
 
-let resp;
-try {
-  resp = await mercadopago.preferences.create(preference);
-} catch (e) {
-  console.error('❌ Error creando preferencia MP:', e?.message || e);
-  console.error('❌ Detalle MP:', e?.response?.data || e?.cause || e);
-  return res.status(500).send('❌ Error creando preferencia de MercadoPago (ver logs del backend).');
+  let resp;
+  try {
+    resp = await mercadopago.preferences.create(preference);
+  } catch (e) {
+    console.error('❌ Error creando preferencia MP:', e?.message || e);
+    console.error('❌ Detalle MP:', e?.response?.data || e);
+    return res.status(500).send('❌ Error creando preferencia de MercadoPago.');
+  }
+
+  const initPoint = resp?.body?.init_point;
+  if (!initPoint) {
+    return res.status(500).send('❌ MercadoPago no devolvió init_point.');
+  }
+
+  return res.redirect(initPoint);
 }
 
-console.log('✅ Respuesta MP preference:', resp?.body || resp);
-
-const initPoint = resp?.body?.init_point;
-if (!initPoint) {
-  console.log('❌ MP no devolvió init_point');
-  return res.status(500).send('❌ MercadoPago no devolvió init_point (ver logs del backend).');
-}
-
-return res.redirect(initPoint);
-
-    }
 
     // 5) Si es efectivo -> volver al front
     return res.redirect(`${process.env.FRONT_URL}/reserva-confirmada.html?id=${reserva._id}`);
@@ -734,7 +731,7 @@ if (metodoPago === 'online') {
       currency_id: 'ARS',
       unit_price: precioCalculado
     }],
-    notification_url: 'https://localhost:3000/api/mercadopago/webhook',
+notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
     external_reference: turno._id.toString()
   };
 
@@ -1723,7 +1720,7 @@ app.post('/generar-link-pago/:reservaId', async (req, res) => {
                 currency_id: 'ARS',
                 unit_price: reserva.precio
             }],
-            notification_url: 'https://localhost:3000/api/mercadopago/webhook',
+notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
             external_reference: reserva._id.toString()
         };
 
