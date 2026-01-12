@@ -99,7 +99,8 @@ mongoose.connect(process.env.MONGO_URI)
 // Crear reserva pendiente y enviar email de confirmación
 app.post('/reservas/hold', async (req, res) => {
   try {
-    const { canchaId, fecha, hora, usuarioId, email } = req.body;
+  const { canchaId, fecha, hora, usuarioId, email, metodoPago } = req.body;
+console.log('📌 HOLD metodoPago recibido:', metodoPago);
 
     if (!canchaId || !fecha || !hora || !email) {
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
@@ -114,6 +115,7 @@ app.post('/reservas/hold', async (req, res) => {
       hora,
       usuarioId,
       emailContacto: email,
+      metodoPago: (metodoPago === 'online' ? 'online' : 'efectivo'), // ✅ guarda online o efectivo
       estado: 'PENDING',
       codigoOTP,
       expiresAt
