@@ -341,15 +341,29 @@ turno.metodoPago = reserva.metodoPago || turno.metodoPago || 'efectivo';
 await turno.save();
 console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
 
-    // 4) Si eligió MercadoPago -> crear preferencia y redirigir
-if ((turno.metodoPago || reserva.metodoPago) === 'online') {
-      // ✅ IMPORTANTE: ajustamos el token a uno fijo (el del sistema)
-      // (Más adelante podemos hacerlo por token del club)
-      if (!process.env.MP_ACCESS_TOKEN) {
-  return res.send('❌ Falta MP_ACCESS_TOKEN en el backend.');
+// 4) Si eligió MercadoPago -> crear preferencia y redirigir
+console.log('🧾 CONFIRM metodoPago reserva:', reserva.metodoPago);
+console.log('🧾 CONFIRM metodoPago turno:', turno.metodoPago);
+
+const metodoFinal = (turno.metodoPago || reserva.metodoPago || 'efectivo');
+console.log('🧾 CONFIRM metodoFinal:', metodoFinal);
+
+if (metodoFinal !== 'online') {
+  console.log('🚫 NO entra a MercadoPago porque metodoFinal es:', metodoFinal);
+} else {
+  console.log('✅ ENTRA a MercadoPago (metodoFinal=online)');
 }
 
-mercadopago.configure({ access_token: process.env.MP_ACCESS_TOKEN });
+if (metodoFinal === 'online') {
+  // ✅ IMPORTANTE: ajustamos el token a uno fijo (el del sistema)
+  // (Más adelante podemos hacerlo por token del club)
+  if (!process.env.MP_ACCESS_TOKEN) {
+    return res.send('❌ Falta MP_ACCESS_TOKEN en el backend.');
+  }
+
+  mercadopago.configure({ access_token: process.env.MP_ACCESS_TOKEN });
+
+
 
       const preference = {
         items: [
