@@ -368,18 +368,32 @@ mercadopago.configure({ access_token: process.env.MP_ACCESS_TOKEN });
         },
         auto_return: 'approved',
         // ⚠️ Si tu webhook es otro, después lo ajustamos
-        notification_url: `${process.env.APP_BASE_URL}/api/mercadopago/webhook`
+notification_url: `https://api.canchalibre.ar/api/mercadopago/webhook`,
       };
 
-      const resp = await mercadopago.preferences.create(preference);
-      const initPoint = resp?.body?.init_point;
+console.log('🟦 Intentando crear preferencia MP para reserva:', String(reserva._id));
+console.log('🟦 MP token present:', Boolean(process.env.MP_ACCESS_TOKEN));
+console.log('🟦 Precio enviado a MP:', Number(turno?.precio || 0));
 
-      if (!initPoint) {
-        return res.send('❌ No se pudo generar el link de pago.');
-      }
+let resp;
+try {
+  resp = await mercadopago.preferences.create(preference);
+} catch (e) {
+  console.error('❌ Error creando preferencia MP:', e?.message || e);
+  console.error('❌ Detalle MP:', e?.response?.data || e?.cause || e);
+  return res.status(500).send('❌ Error creando preferencia de MercadoPago (ver logs del backend).');
+}
 
-      // ✅ Redirigir al checkout de MercadoPago
-      return res.redirect(initPoint);
+console.log('✅ Respuesta MP preference:', resp?.body || resp);
+
+const initPoint = resp?.body?.init_point;
+if (!initPoint) {
+  console.log('❌ MP no devolvió init_point');
+  return res.status(500).send('❌ MercadoPago no devolvió init_point (ver logs del backend).');
+}
+
+return res.redirect(initPoint);
+
     }
 
     // 5) Si es efectivo -> volver al front
