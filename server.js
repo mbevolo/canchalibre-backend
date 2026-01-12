@@ -270,6 +270,74 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     reserva.estado = 'CONFIRMED';
     await reserva.save();
 
+// ✅ IMPORTANTE: impactar la reserva en Turno (lo que ve el panel del club)
+// Si el Turno NO existe, lo creamos (porque /turnos-generados no guarda turnos en DB)
+
+const cancha = await Cancha.findById(reserva.canchaId);
+if (!cancha) {
+  console.log('❌ No se encontró Cancha para crear Turno:', reserva.canchaId);
+  return res.send('❌ No se encontró la cancha para confirmar la reserva.');
+}
+
+const emailReservadoFinal = (reserva.emailContacto || '').trim();
+if (!emailReservadoFinal) {
+  console.log('❌ Reserva sin emailContacto:', reserva._id);
+  return res.send('❌ La reserva no tiene email de contacto.');
+}
+
+// Intentar buscar usuarioId por email (opcional)
+let usuario = null;
+try {
+  usuario = await Usuario.findOne({ email: emailReservadoFinal });
+} catch (e) {}
+
+// Calcular precio (igual que hacés en el mail)
+let precioCalculado = Number(reserva.precio || 0);
+try {
+  const [Y, M, D] = String(reserva.fecha).split('-').map(Number);
+  const [h, m] = String(reserva.hora).split(':').map(Number);
+  const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
+  precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
+} catch (e) {
+  console.error('⚠️ No se pudo calcular precio al confirmar:', e);
+}
+
+// Buscar turno existente por canchaId+fecha+hora
+let turno = await Turno.findOne({
+  canchaId: reserva.canchaId,
+  fecha: reserva.fecha,
+  hora: reserva.hora
+});
+
+if (!turno) {
+  // ✅ Crear turno nuevo (esto es lo que faltaba)
+  turno = new Turno({
+    deporte: cancha.deporte,
+    fecha: reserva.fecha,
+    club: cancha.clubEmail,        // 👈 clave para que el panel del club lo encuentre
+    hora: reserva.hora,
+    precio: precioCalculado,
+    usuarioReservado: emailReservadoFinal,  // o un nombre si algún día lo guardás
+    emailReservado: emailReservadoFinal,
+    usuarioId: usuario?._id || null,
+    pagado: false,
+    canchaId: reserva.canchaId
+  });
+} else {
+  // ✅ Si ya existía, lo marcamos reservado
+  turno.usuarioReservado = emailReservadoFinal;
+  turno.emailReservado = emailReservadoFinal;
+  turno.usuarioId = usuario?._id || turno.usuarioId || null;
+  turno.pagado = false;
+  turno.precio = precioCalculado;
+}
+
+// Guardar método de pago si existe (por ahora, si no vino, queda efectivo)
+turno.metodoPago = reserva.metodoPago || turno.metodoPago || 'efectivo';
+
+await turno.save();
+console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
+
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
     if (reserva.metodoPago === 'online') {
       // ✅ IMPORTANTE: ajustamos el token a uno fijo (el del sistema)
