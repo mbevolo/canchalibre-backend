@@ -365,6 +365,8 @@ if (metodoFinal === 'online') {
   }
 
   mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
+console.log('🏦 MP cobrador (club):', clubData.email);
+console.log('🏦 MP token club termina en:', String(clubData.mercadoPagoAccessToken || '').slice(-6));
 
   const preference = {
     items: [
@@ -402,6 +404,8 @@ if (metodoFinal === 'online') {
   if (!initPoint) {
     return res.status(500).send('❌ MercadoPago no devolvió init_point.');
   }
+console.log('💰 MP collector_id:', resp?.body?.collector_id);
+console.log('🔗 MP init_point:', resp?.body?.init_point);
 
   return res.redirect(initPoint);
 }
