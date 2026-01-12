@@ -4,16 +4,24 @@ const mongoose = require('mongoose');
 const ReservaSchema = new mongoose.Schema({
   canchaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cancha', required: true },
   usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', default: null },
+
   fecha: { type: String, required: true },
   hora: { type: String, required: true },
-  estado: { 
-    type: String, 
-    enum: ['PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED'], 
-    default: 'PENDING' 
+
+  // ✅ NUEVO: método de pago elegido en detalle.html
+  metodoPago: { type: String, enum: ['online', 'efectivo'], default: 'efectivo' },
+
+  estado: {
+    type: String,
+    enum: ['PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED'],
+    default: 'PENDING'
   },
+
   codigoOTP: { type: String, default: null },
   expiresAt: { type: Date, required: true },
+
   emailContacto: { type: String, default: null },
+
   createdAt: { type: Date, default: Date.now }
 });
 
