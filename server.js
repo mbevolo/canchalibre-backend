@@ -213,7 +213,7 @@ app.post('/reservas/reenviar-confirmacion', async (req, res) => {
       console.error('⚠️ No se pudo calcular precio en /reservas/reenviar-confirmacion:', e);
     }
 
-    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${reserva.codigoOTP}`;
+const link = `${process.env.APP_BASE_URL}/reservas/confirmar/${reserva._id}/${reserva.codigoOTP}`;
 
     const html = `
       <h2>Reenvío de confirmación de tu reserva</h2>
@@ -248,63 +248,78 @@ app.post('/reservas/reenviar-confirmacion', async (req, res) => {
 app.get('/reservas/confirmar/:id/:code', async (req, res) => {
   try {
     const { id, code } = req.params;
+
+    // 1) Buscar reserva
     const reserva = await Reserva.findById(id);
     if (!reserva) return res.send('❌ Reserva no encontrada.');
-    if (reserva.estado !== 'PENDING') return res.send('⚠️ Esta reserva ya fue confirmada o expirada.');
-    if (new Date() > reserva.expiresAt) return res.send('⏰ El enlace ha expirado.');
-    if (reserva.codigoOTP !== code) return res.send('❌ Código inválido.');
 
-    // 1️⃣ Confirmar la reserva
-    reserva.estado = 'CONFIRMED';
-    reserva.codigoOTP = null;
-    await reserva.save();
-
-    // 2️⃣ Crear el turno real que verá el club
-    const cancha = await Cancha.findById(reserva.canchaId);
-    if (!cancha) return res.send('⚠️ Cancha no encontrada para esta reserva.');
-
-    const clubEmail = cancha.clubEmail;
-    const club = await Club.findOne({ email: clubEmail });
-
-    // 🆕 Intentar vincular al usuario según el email de la reserva
-    let usuario = null;
-    try {
-      usuario = await Usuario.findOne({ email: reserva.emailContacto });
-      if (usuario) {
-        console.log('🔗 Usuario vinculado a turno en /reservas/confirmar:', usuario.email, usuario.telefono);
-      } else {
-        console.log('ℹ️ No se encontró usuario para', reserva.emailContacto);
-      }
-    } catch (e) {
-      console.error('⚠️ Error buscando usuario en /reservas/confirmar:', e);
+    // 2) Validaciones
+    if (String(reserva.codigoOTP) !== String(code)) {
+      return res.send('❌ Código inválido.');
     }
 
-    const nuevoTurno = new Turno({
-      deporte: cancha.deporte,
-      fecha: reserva.fecha,
-      hora: reserva.hora,
-      club: clubEmail,
-      precio: cancha.precio,
-      usuarioReservado: reserva.emailContacto, // dejamos el mail como antes
-      emailReservado: reserva.emailContacto,
-      // 👉 ahora guardamos el usuario si existe
-      usuarioId: reserva.usuarioId || (usuario ? usuario._id : null),
-      pagado: false,
-      canchaId: cancha._id,
-      // opcional, para compatibilidad con código viejo
-      telefonoReservado: usuario?.telefono || undefined
-    });
+    if (reserva.estado !== 'PENDING') {
+      return res.send('⚠️ Esta reserva ya fue confirmada o expirada.');
+    }
 
-    await nuevoTurno.save();
+    if (reserva.expiresAt && new Date() > new Date(reserva.expiresAt)) {
+      return res.send('⏳ El enlace expiró. Volvé a reservar.');
+    }
 
-    console.log(`✅ Turno creado para ${reserva.emailContacto} en cancha ${cancha.nombre}. usuarioId=${nuevoTurno.usuarioId}`);
+    // 3) Confirmar reserva
+    reserva.estado = 'CONFIRMED';
+    await reserva.save();
 
-    res.send('✅ ¡Reserva confirmada y registrada correctamente! Te esperamos en la cancha.');
+    // 4) Si eligió MercadoPago -> crear preferencia y redirigir
+    if (reserva.metodoPago === 'online') {
+      // ✅ IMPORTANTE: ajustamos el token a uno fijo (el del sistema)
+      // (Más adelante podemos hacerlo por token del club)
+      if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
+        return res.send('❌ Falta MERCADOPAGO_ACCESS_TOKEN en el backend.');
+      }
+
+      mercadopago.configure({ access_token: process.env.MERCADOPAGO_ACCESS_TOKEN });
+
+      const preference = {
+        items: [
+          {
+            title: `Reserva CanchaLibre`,
+            quantity: 1,
+            currency_id: 'ARS',
+            unit_price: Number(reserva.precio || 0),
+          }
+        ],
+        external_reference: String(reserva._id),
+        back_urls: {
+          success: `${process.env.FRONT_URL}/mp-success.html?reserva=${reserva._id}`,
+          pending: `${process.env.FRONT_URL}/mp-pending.html?reserva=${reserva._id}`,
+          failure: `${process.env.FRONT_URL}/mp-failure.html?reserva=${reserva._id}`
+        },
+        auto_return: 'approved',
+        // ⚠️ Si tu webhook es otro, después lo ajustamos
+        notification_url: `${process.env.APP_BASE_URL}/api/mercadopago/webhook`
+      };
+
+      const resp = await mercadopago.preferences.create(preference);
+      const initPoint = resp?.body?.init_point;
+
+      if (!initPoint) {
+        return res.send('❌ No se pudo generar el link de pago.');
+      }
+
+      // ✅ Redirigir al checkout de MercadoPago
+      return res.redirect(initPoint);
+    }
+
+    // 5) Si es efectivo -> volver al front
+    return res.redirect(`${process.env.FRONT_URL}/reserva-confirmada.html?id=${reserva._id}`);
+
   } catch (error) {
-    console.error('❌ Error en /reservas/confirmar:', error);
-    res.send('Error al confirmar y registrar reserva.');
+    console.error('❌ Error en confirmación de reserva:', error);
+    return res.status(500).send('Error confirmando la reserva');
   }
 });
+
 
 // 📨 Reenviar correo de confirmación de reserva
 app.post('/reservas/:id/reenviar', async (req, res) => {
