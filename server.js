@@ -341,14 +341,14 @@ await turno.save();
 console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
 
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
-    if (reserva.metodoPago === 'online') {
+if ((turno.metodoPago || reserva.metodoPago) === 'online') {
       // ✅ IMPORTANTE: ajustamos el token a uno fijo (el del sistema)
       // (Más adelante podemos hacerlo por token del club)
-      if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
-        return res.send('❌ Falta MERCADOPAGO_ACCESS_TOKEN en el backend.');
-      }
+      if (!process.env.MP_ACCESS_TOKEN) {
+  return res.send('❌ Falta MP_ACCESS_TOKEN en el backend.');
+}
 
-      mercadopago.configure({ access_token: process.env.MERCADOPAGO_ACCESS_TOKEN });
+mercadopago.configure({ access_token: process.env.MP_ACCESS_TOKEN });
 
       const preference = {
         items: [
@@ -356,7 +356,7 @@ console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
             title: `Reserva CanchaLibre`,
             quantity: 1,
             currency_id: 'ARS',
-            unit_price: Number(reserva.precio || 0),
+            unit_price: Number(turno.precio || 0),
           }
         ],
         external_reference: String(reserva._id),
