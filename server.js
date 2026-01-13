@@ -29,6 +29,18 @@ const app = express();
 
 app.set("trust proxy", 1);
 
+function formatearFechaDDMMYYYY(fecha) {
+  const s = String(fecha || '').trim();
+
+  // YYYY-MM-DD → DD/MM/YYYY
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const [, y, mm, dd] = m;
+    return `${dd}/${mm}/${y}`;
+  }
+
+  return s;
+}
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
@@ -153,7 +165,7 @@ console.log('📌 /reservas/hold metodoPago recibido:', metodoPago);
         <li><strong>Club:</strong> ${club ? club.nombre : 'A confirmar'}</li>
         <li><strong>Cancha:</strong> ${cancha ? cancha.nombre : 'Sin nombre'}</li>
         <li><strong>Deporte:</strong> ${cancha ? cancha.deporte : ''}</li>
-        <li><strong>Fecha:</strong> ${fecha}</li>
+        <li><strong>Fecha:</strong> ${formatearFechaDDMMYYYY(reserva.fecha)}</li>
         <li><strong>Hora:</strong> ${hora}</li>
         ${precioCalculado !== null ? `<li><strong>Precio estimado:</strong> $${precioCalculado}</li>` : ''}
       </ul>
