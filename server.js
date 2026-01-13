@@ -1424,12 +1424,7 @@ app.get('/turnos-generados', async (req, res) => {
           const key = `${String(cancha._id)}|${fechaStr}|${hora}`;
           let reservado = reservadosPorCanchaFechaHora.get(key);
 
-          // fallback legacy por si existiera alguna reserva que no tenía canchaId consistente en el pasado
-          if (!reservado) {
-            const legacy1 = `${cancha.deporte}|${cancha.clubEmail}|${fechaStr}|${hora}`;
-            const legacy2 = clubInfo?.nombre ? `${cancha.deporte}|${clubInfo.nombre}|${fechaStr}|${hora}` : null;
-            reservado = reservadosLegacy.get(legacy1) || (legacy2 ? reservadosLegacy.get(legacy2) : null);
-          }
+        
 
           todosTurnos.push({
             canchaId: cancha._id,
