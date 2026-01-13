@@ -273,155 +273,157 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     reserva.estado = 'CONFIRMED';
     await reserva.save();
 
-// ✅ IMPORTANTE: impactar la reserva en Turno (lo que ve el panel del club)
-// Si el Turno NO existe, lo creamos (porque /turnos-generados no guarda turnos en DB)
+    // ✅ IMPORTANTE: impactar la reserva en Turno (lo que ve el panel del club)
+    // Si el Turno NO existe, lo creamos (porque /turnos-generados no guarda turnos en DB)
 
-const cancha = await Cancha.findById(reserva.canchaId);
-if (!cancha) {
-  console.log('❌ No se encontró Cancha para crear Turno:', reserva.canchaId);
-  return res.send('❌ No se encontró la cancha para confirmar la reserva.');
-}
+    const cancha = await Cancha.findById(reserva.canchaId);
+    if (!cancha) {
+      console.log('❌ No se encontró Cancha para crear Turno:', reserva.canchaId);
+      return res.send('❌ No se encontró la cancha para confirmar la reserva.');
+    }
 
-const emailReservadoFinal = (reserva.emailContacto || '').trim();
-if (!emailReservadoFinal) {
-  console.log('❌ Reserva sin emailContacto:', reserva._id);
-  return res.send('❌ La reserva no tiene email de contacto.');
-}
+    const emailReservadoFinal = (reserva.emailContacto || '').trim();
+    if (!emailReservadoFinal) {
+      console.log('❌ Reserva sin emailContacto:', reserva._id);
+      return res.send('❌ La reserva no tiene email de contacto.');
+    }
 
-// Intentar buscar usuarioId por email (opcional)
-let usuario = null;
-try {
-  usuario = await Usuario.findOne({ email: emailReservadoFinal });
-} catch (e) {}
+    // Intentar buscar usuarioId por email (opcional)
+    let usuario = null;
+    try {
+      usuario = await Usuario.findOne({ email: emailReservadoFinal });
+    } catch (e) {}
 
-// Calcular precio (igual que hacés en el mail)
-let precioCalculado = Number(reserva.precio || 0);
-try {
-  const [Y, M, D] = String(reserva.fecha).split('-').map(Number);
-  const [h, m] = String(reserva.hora).split(':').map(Number);
-  const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
-  precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
-} catch (e) {
-  console.error('⚠️ No se pudo calcular precio al confirmar:', e);
-}
+    // Calcular precio (igual que hacés en el mail)
+    let precioCalculado = Number(reserva.precio || 0);
+    try {
+      const [Y, M, D] = String(reserva.fecha).split('-').map(Number);
+      const [h, m] = String(reserva.hora).split(':').map(Number);
+      const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
+      precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
+    } catch (e) {
+      console.error('⚠️ No se pudo calcular precio al confirmar:', e);
+    }
 
-// Buscar turno existente por canchaId+fecha+hora
-let turno = await Turno.findOne({
-  canchaId: reserva.canchaId,
-  fecha: reserva.fecha,
-  hora: reserva.hora
-});
+    // Buscar turno existente por canchaId+fecha+hora
+    let turno = await Turno.findOne({
+      canchaId: reserva.canchaId,
+      fecha: reserva.fecha,
+      hora: reserva.hora
+    });
 
-if (!turno) {
-  // ✅ Crear turno nuevo (esto es lo que faltaba)
-  turno = new Turno({
-    deporte: cancha.deporte,
-    fecha: reserva.fecha,
-    club: cancha.clubEmail,        // 👈 clave para que el panel del club lo encuentre
-    hora: reserva.hora,
-    precio: precioCalculado,
-    usuarioReservado: emailReservadoFinal,  // o un nombre si algún día lo guardás
-    emailReservado: emailReservadoFinal,
-    usuarioId: usuario?._id || null,
-    pagado: false,
-    canchaId: reserva.canchaId
-  });
-} else {
-  // ✅ Si ya existía, lo marcamos reservado
-  turno.usuarioReservado = emailReservadoFinal;
-  turno.emailReservado = emailReservadoFinal;
-  turno.usuarioId = usuario?._id || turno.usuarioId || null;
-  turno.pagado = false;
-  turno.precio = precioCalculado;
-}
+    if (!turno) {
+      // ✅ Crear turno nuevo (esto es lo que faltaba)
+      turno = new Turno({
+        deporte: cancha.deporte,
+        fecha: reserva.fecha,
+        club: cancha.clubEmail, // 👈 clave para que el panel del club lo encuentre
+        hora: reserva.hora,
+        precio: precioCalculado,
+        usuarioReservado: emailReservadoFinal,
+        emailReservado: emailReservadoFinal,
+        usuarioId: usuario?._id || null,
+        pagado: false,
+        canchaId: reserva.canchaId
+      });
+    } else {
+      // ✅ Si ya existía, lo marcamos reservado
+      turno.usuarioReservado = emailReservadoFinal;
+      turno.emailReservado = emailReservadoFinal;
+      turno.usuarioId = usuario?._id || turno.usuarioId || null;
+      turno.pagado = false;
+      turno.precio = precioCalculado;
+    }
 
-// Guardar método de pago si existe (por ahora, si no vino, queda efectivo)
-turno.metodoPago = reserva.metodoPago || turno.metodoPago || 'efectivo';
+    // Guardar método de pago si existe (por ahora, si no vino, queda efectivo)
+    turno.metodoPago = reserva.metodoPago || turno.metodoPago || 'efectivo';
 
-await turno.save();
-console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
+    await turno.save();
+    console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
 
-// 4) Si eligió MercadoPago -> crear preferencia y redirigir
-console.log('🧾 CONFIRM metodoPago reserva:', reserva.metodoPago);
-console.log('🧾 CONFIRM metodoPago turno:', turno.metodoPago);
+    // 4) Si eligió MercadoPago -> crear preferencia y redirigir
+    console.log('🧾 CONFIRM metodoPago reserva:', reserva.metodoPago);
+    console.log('🧾 CONFIRM metodoPago turno:', turno.metodoPago);
 
-const metodoFinal = (turno.metodoPago || reserva.metodoPago || 'efectivo');
-console.log('🧾 CONFIRM metodoFinal:', metodoFinal);
+    const metodoFinal = (turno.metodoPago || reserva.metodoPago || 'efectivo');
+    console.log('🧾 CONFIRM metodoFinal:', metodoFinal);
 
-if (metodoFinal !== 'online') {
-  console.log('🚫 NO entra a MercadoPago porque metodoFinal es:', metodoFinal);
-} else {
-  console.log('✅ ENTRA a MercadoPago (metodoFinal=online)');
-}
+    if (metodoFinal !== 'online') {
+      console.log('🚫 NO entra a MercadoPago porque metodoFinal es:', metodoFinal);
+    } else {
+      console.log('✅ ENTRA a MercadoPago (metodoFinal=online)');
+    }
 
-if (metodoFinal === 'online') {
-
-  // ✅ cobrar en la cuenta del CLUB dueño de la cancha
-  const clubData = await Club.findOne({ email: cancha.clubEmail });
-  if (!clubData || !clubData.mercadoPagoAccessToken) {
-    return res
-      .status(400)
-      .send('❌ El club no tiene configurado su Access Token de MercadoPago.');
-  }
-
-  mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
-console.log('🏦 MP cobrador (club):', clubData.email);
-console.log('🏦 MP token club termina en:', String(clubData.mercadoPagoAccessToken || '').slice(-6));
-
-  const preference = {
-    items: [
-      {
-        title: `Reserva CanchaLibre`,
-        quantity: 1,
-        currency_id: 'ARS',
-        unit_price: Number(turno.precio || 0),
+    if (metodoFinal === 'online') {
+      // ✅ cobrar en la cuenta del CLUB dueño de la cancha
+      const clubData = await Club.findOne({ email: cancha.clubEmail });
+      if (!clubData || !clubData.mercadoPagoAccessToken) {
+        return res
+          .status(400)
+          .send('❌ El club no tiene configurado su Access Token de MercadoPago.');
       }
-    ],
 
-// ✅ IMPORTANTE: que sea el TURNO (así el webhook lo encuentra y marca pagado)
-external_reference: String(turno._id),
+      mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
+      console.log('🏦 MP cobrador (club):', clubData.email);
+      console.log('🏦 MP token club termina en:', String(clubData.mercadoPagoAccessToken || '').slice(-6));
 
-back_urls: {
-  success: `${process.env.FRONT_URL}/mp-success.html?turno=${turno._id}`,
-  pending: `${process.env.FRONT_URL}/mp-pending.html?turno=${turno._id}`,
-  failure: `${process.env.FRONT_URL}/mp-failure.html?turno=${turno._id}`
-},
+      // ✅ pasar club + turno al webhook para que pueda usar el token del club
+      const clubEmailEnc = encodeURIComponent(String(clubData.email || cancha.clubEmail || ''));
+      const turnoIdEnc = encodeURIComponent(String(turno._id));
+      const notificationUrl = `https://api.canchalibre.ar/api/mercadopago/webhook?club=${clubEmailEnc}&turno=${turnoIdEnc}`;
 
-auto_return: 'approved',
-notification_url: `https://api.canchalibre.ar/api/mercadopago/webhook`,
-};
+      const preference = {
+        items: [
+          {
+            title: `Reserva CanchaLibre`,
+            quantity: 1,
+            currency_id: 'ARS',
+            unit_price: Number(turno.precio || 0),
+          }
+        ],
 
-let resp;
-try {
-  resp = await mercadopago.preferences.create(preference);
-} catch (e) {
-  console.error('❌ Error creando preferencia MP:', e?.message || e);
-  console.error('❌ Detalle MP:', e?.response?.data || e);
-  return res.status(500).send('❌ Error creando preferencia de MercadoPago.');
-}
+        // ✅ IMPORTANTE: que sea el TURNO (así el webhook lo encuentra y marca pagado)
+        external_reference: String(turno._id),
 
-const body = resp?.body || {};
+        back_urls: {
+          success: `${process.env.FRONT_URL}/mp-success.html?turno=${turno._id}`,
+          pending: `${process.env.FRONT_URL}/mp-pending.html?turno=${turno._id}`,
+          failure: `${process.env.FRONT_URL}/mp-failure.html?turno=${turno._id}`
+        },
 
-console.log('💰 MP collector_id:', body?.collector_id);
-console.log('🔗 MP init_point:', body?.init_point);
-console.log('🔗 MP sandbox_init_point:', body?.sandbox_init_point);
+        auto_return: 'approved',
+        notification_url: notificationUrl,
+      };
 
-const tokenClub = String(clubData?.mercadoPagoAccessToken || '');
-const esSandbox = tokenClub.startsWith('TEST-');
+      let resp;
+      try {
+        resp = await mercadopago.preferences.create(preference);
+      } catch (e) {
+        console.error('❌ Error creando preferencia MP:', e?.message || e);
+        console.error('❌ Detalle MP:', e?.response?.data || e);
+        return res.status(500).send('❌ Error creando preferencia de MercadoPago.');
+      }
 
-const urlCheckout = esSandbox ? body.sandbox_init_point : body.init_point;
+      const body = resp?.body || {};
 
-console.log('🧪 MP modo:', esSandbox ? 'SANDBOX' : 'PRODUCCION');
-console.log('🔗 MP redirect:', urlCheckout);
+      console.log('💰 MP collector_id:', body?.collector_id);
+      console.log('🔗 MP init_point:', body?.init_point);
+      console.log('🔗 MP sandbox_init_point:', body?.sandbox_init_point);
 
-if (!urlCheckout) {
-  return res.status(500).send('❌ MercadoPago no devolvió URL de checkout.');
-}
+      const tokenClub = String(clubData?.mercadoPagoAccessToken || '');
+      const esSandbox = tokenClub.startsWith('TEST-');
 
-return res.redirect(urlCheckout);
+      const urlCheckout = esSandbox ? body.sandbox_init_point : body.init_point;
 
-}
+      console.log('🧪 MP modo:', esSandbox ? 'SANDBOX' : 'PRODUCCION');
+      console.log('🔗 MP redirect:', urlCheckout);
 
+      if (!urlCheckout) {
+        return res.status(500).send('❌ MercadoPago no devolvió URL de checkout.');
+      }
+
+      return res.redirect(urlCheckout);
+    }
 
     // 5) Si es efectivo -> volver al front
     return res.redirect(`${process.env.FRONT_URL}/reserva-confirmada.html?id=${reserva._id}`);
@@ -431,6 +433,7 @@ return res.redirect(urlCheckout);
     return res.status(500).send('Error confirmando la reserva');
   }
 });
+
 
 
 // 📨 Reenviar correo de confirmación de reserva
@@ -767,44 +770,105 @@ if (metodoPago === 'efectivo') {
 );
 
 
-// ✅ WEBHOOK MP con idempotencia y validación de external_reference
+// ✅ WEBHOOK MP (multi-club) con idempotencia y token por club
 app.post('/api/mercadopago/webhook', async (req, res) => {
   try {
     const paymentId = req.query.id || req.body?.data?.id;
     if (!paymentId) return res.sendStatus(200);
 
+    const turnoIdFromQuery = req.query.turno ? String(req.query.turno).trim() : null;
+    const clubEmailFromQuery = req.query.club ? String(req.query.club).trim() : null;
+
     // ✅ Idempotencia persistente en DB
     const yaExiste = await PaymentEvent.findOne({ paymentId });
-    if (yaExiste) return res.sendStatus(200); // ya procesado
+    if (yaExiste) return res.sendStatus(200);
 
     // Registrar como procesado ANTES de continuar
     await PaymentEvent.create({ paymentId });
 
-    // Traer el pago desde MP
+    // 1) Resolver TURNO (primero por query, luego por external_reference, luego por pagoId)
+    let turno = null;
+
+    if (turnoIdFromQuery) {
+      try { turno = await Turno.findById(turnoIdFromQuery); } catch (_) {}
+    }
+
+    // 2) Si no lo tenemos aún, vamos a buscar el pago en MP, pero para eso necesitamos token correcto.
+    //    Intentamos obtener el club por:
+    //    A) clubEmailFromQuery
+    //    B) turno.club (si ya encontramos turno)
+    //    C) cancha.clubEmail (si encontramos turno y tiene canchaId)
+
+    let clubData = null;
+
+    if (clubEmailFromQuery) {
+      clubData = await Club.findOne({ email: clubEmailFromQuery });
+    }
+
+    if (!clubData && turno?.club) {
+      // turno.club guarda el email del club (en tu sistema)
+      clubData = await Club.findOne({ email: turno.club });
+    }
+
+    if (!clubData && turno?.canchaId) {
+      const cancha = await Cancha.findById(turno.canchaId);
+      if (cancha?.clubEmail) {
+        clubData = await Club.findOne({ email: cancha.clubEmail });
+      }
+    }
+
+    // Si todavía no tenemos clubData, no podemos consultar el pago (porque ahora es token del club)
+    if (!clubData || !clubData.mercadoPagoAccessToken) {
+      console.log('⚠️ Webhook sin club token. paymentId:', paymentId, 'club:', clubEmailFromQuery, 'turno:', turnoIdFromQuery);
+      return res.sendStatus(200);
+    }
+
+    // ✅ Configurar MP con token del club dueño
+    mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
+
+    // Traer el pago desde MP (con el token del club correcto)
     const resp = await mercadopago.payment.findById(paymentId);
     const payment = resp?.body || {};
     const status = payment.status;
     const externalRef = payment.external_reference;
 
-    if (!externalRef) return res.sendStatus(200);
+    // Si todavía no encontramos turno, intentamos con external_reference
+    if (!turno && externalRef) {
+      try { turno = await Turno.findById(String(externalRef)); } catch (_) {}
+    }
 
-    let turno = null;
-    try { turno = await Turno.findById(externalRef); } catch (_) {}
-    if (!turno && paymentId) {
+    // Fallback: buscar por pagoId
+    if (!turno) {
       turno = await Turno.findOne({ pagoId: paymentId }).catch(() => null);
     }
-    if (!turno) return res.sendStatus(200);
 
+    if (!turno) {
+      console.log('⚠️ Webhook: no se encontró turno. paymentId:', paymentId, 'external_reference:', externalRef);
+      return res.sendStatus(200);
+    }
+
+    // ✅ Marcar pagado si approved
     if (status === 'approved') {
       if (!turno.pagado) {
-        turno.pagado = true;              // 👈 usamos el campo correcto
+        turno.pagado = true;
         turno.fechaPago = new Date();
         turno.pagoId = paymentId;
-        turno.pagoMetodo = payment.payment_method?.type || payment.payment_type_id || 'mercadopago';
+        turno.pagoMetodo =
+          payment.payment_method?.type ||
+          payment.payment_type_id ||
+          payment.payment_method_id ||
+          'mercadopago';
+
         await turno.save();
+        console.log('✅ Webhook: turno marcado como PAGADO:', String(turno._id), 'club:', clubData.email);
+      } else {
+        console.log('ℹ️ Webhook: turno ya estaba pagado:', String(turno._id));
       }
     } else if (status === 'rejected' || status === 'cancelled') {
-      // tu política: liberar turno o dejarlo pendiente
+      console.log('ℹ️ Webhook: pago no aprobado:', status, 'turno:', String(turno._id));
+      // acá podés decidir si liberás turno o lo dejás pendiente
+    } else {
+      console.log('ℹ️ Webhook: status intermedio:', status, 'turno:', String(turno._id));
     }
 
     return res.sendStatus(200);
@@ -813,6 +877,7 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
     return res.sendStatus(500);
   }
 });
+
 
 
 
