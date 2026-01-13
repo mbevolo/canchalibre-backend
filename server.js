@@ -632,6 +632,23 @@ app.get('/reservas-usuario/:email', async (req, res) => {
         };
       })
     ]);
+// 🔹 Resolver nombre de cancha para cada reserva/turno
+const canchaIds = reservasFinales
+  .map(r => r.canchaId)
+  .filter(Boolean);
+
+const canchas = await Cancha.find({ _id: { $in: canchaIds } })
+  .select('_id nombre')
+  .lean();
+
+const canchaMap = new Map(
+  canchas.map(c => [String(c._id), c.nombre])
+);
+
+reservasFinales = reservasFinales.map(r => ({
+  ...r,
+  nombreCancha: r.canchaId ? canchaMap.get(String(r.canchaId)) || null : null
+}));
 
     res.json(reservasConNombreClub);
   } catch (error) {
