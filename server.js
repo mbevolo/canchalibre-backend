@@ -1793,11 +1793,11 @@ app.post('/club/:email/destacar-pago', async (req, res) => {
                 currency_id: 'ARS',
                 unit_price: precioDestacado
             }],
-            notification_url: 'https://localhost:3000/api/mercadopago/destacado-webhook',
+            notification_url: 'https://api.canchalibre.ar/api/mercadopago/destacado-webhook',
             external_reference: clubEmail,
             back_urls: {
-                success: 'https://localhost:3000/panel-club.html',
-                failure: 'https://localhost:3000/panel-club.html'
+                success: 'https://api.canchalibre.ar/panel-club.html',
+                failure: 'https://api.canchalibre.ar/panel-club.html'
             },
             auto_return: 'approved'
         };
