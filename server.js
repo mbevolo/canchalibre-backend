@@ -378,36 +378,48 @@ console.log('🏦 MP token club termina en:', String(clubData.mercadoPagoAccessT
       }
     ],
 
-    // ✅ IMPORTANTE: que sea el TURNO (así el webhook lo encuentra y marca pagado)
-    external_reference: String(turno._id),
+// ✅ IMPORTANTE: que sea el TURNO (así el webhook lo encuentra y marca pagado)
+external_reference: String(turno._id),
 
-    back_urls: {
-      success: `${process.env.FRONT_URL}/mp-success.html?turno=${turno._id}`,
-      pending: `${process.env.FRONT_URL}/mp-pending.html?turno=${turno._id}`,
-      failure: `${process.env.FRONT_URL}/mp-failure.html?turno=${turno._id}`
-    },
+back_urls: {
+  success: `${process.env.FRONT_URL}/mp-success.html?turno=${turno._id}`,
+  pending: `${process.env.FRONT_URL}/mp-pending.html?turno=${turno._id}`,
+  failure: `${process.env.FRONT_URL}/mp-failure.html?turno=${turno._id}`
+},
 
-    auto_return: 'approved',
-    notification_url: `https://api.canchalibre.ar/api/mercadopago/webhook`,
-  };
+auto_return: 'approved',
+notification_url: `https://api.canchalibre.ar/api/mercadopago/webhook`,
+};
 
-  let resp;
-  try {
-    resp = await mercadopago.preferences.create(preference);
-  } catch (e) {
-    console.error('❌ Error creando preferencia MP:', e?.message || e);
-    console.error('❌ Detalle MP:', e?.response?.data || e);
-    return res.status(500).send('❌ Error creando preferencia de MercadoPago.');
-  }
+let resp;
+try {
+  resp = await mercadopago.preferences.create(preference);
+} catch (e) {
+  console.error('❌ Error creando preferencia MP:', e?.message || e);
+  console.error('❌ Detalle MP:', e?.response?.data || e);
+  return res.status(500).send('❌ Error creando preferencia de MercadoPago.');
+}
 
-  const initPoint = resp?.body?.init_point;
-  if (!initPoint) {
-    return res.status(500).send('❌ MercadoPago no devolvió init_point.');
-  }
-console.log('💰 MP collector_id:', resp?.body?.collector_id);
-console.log('🔗 MP init_point:', resp?.body?.init_point);
+const body = resp?.body || {};
 
-  return res.redirect(initPoint);
+console.log('💰 MP collector_id:', body?.collector_id);
+console.log('🔗 MP init_point:', body?.init_point);
+console.log('🔗 MP sandbox_init_point:', body?.sandbox_init_point);
+
+const tokenClub = String(clubData?.mercadoPagoAccessToken || '');
+const esSandbox = tokenClub.startsWith('TEST-');
+
+const urlCheckout = esSandbox ? body.sandbox_init_point : body.init_point;
+
+console.log('🧪 MP modo:', esSandbox ? 'SANDBOX' : 'PRODUCCION');
+console.log('🔗 MP redirect:', urlCheckout);
+
+if (!urlCheckout) {
+  return res.status(500).send('❌ MercadoPago no devolvió URL de checkout.');
+}
+
+return res.redirect(urlCheckout);
+
 }
 
 
