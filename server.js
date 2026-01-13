@@ -605,57 +605,62 @@ app.get('/reservas-usuario/:email', async (req, res) => {
     // Confirmadas (en Turno)
     const reservasConfirmadas = await Turno.find({
       emailReservado: { $regex: new RegExp(`^${email}$`, 'i') }
-    });
+    }).lean();
 
     // Pendientes (en Reserva)
     const reservasPendientes = await Reserva.find({
       emailContacto: { $regex: new RegExp(`^${email}$`, 'i') },
       estado: 'PENDING'
-    });
+    }).lean();
 
-    const reservasConNombreClub = await Promise.all([
+    // ✅ Armar array final (primero)
+    let reservasFinales = await Promise.all([
       ...reservasConfirmadas.map(async (r) => {
-        const club = await Club.findOne({ email: r.club });
+        const club = await Club.findOne({ email: r.club }).select('nombre').lean();
         return {
-          ...r.toObject(),
+          ...r,
           nombreClub: club?.nombre || 'Club desconocido',
           tipo: 'CONFIRMED'
         };
       }),
       ...reservasPendientes.map(async (r) => {
-        const cancha = await Cancha.findById(r.canchaId);
-        const club = cancha ? await Club.findOne({ email: cancha.clubEmail }) : null;
+        const cancha = r.canchaId ? await Cancha.findById(r.canchaId).select('clubEmail nombre').lean() : null;
+        const club = cancha ? await Club.findOne({ email: cancha.clubEmail }).select('nombre').lean() : null;
         return {
-          ...r.toObject(),
+          ...r,
           nombreClub: club?.nombre || 'Club desconocido',
-          tipo: 'PENDING'
+          tipo: 'PENDING',
+          // 👇 opcional: ya le ponemos nombreCancha acá para pendientes
+          nombreCancha: cancha?.nombre || null
         };
       })
     ]);
-// 🔹 Resolver nombre de cancha para cada reserva/turno
-const canchaIds = reservasFinales
-  .map(r => r.canchaId)
-  .filter(Boolean);
 
-const canchas = await Cancha.find({ _id: { $in: canchaIds } })
-  .select('_id nombre')
-  .lean();
+    // ✅ Resolver nombre de cancha también para confirmadas (y por las dudas para todas)
+    const canchaIds = [...new Set(
+      reservasFinales.map(r => r.canchaId).filter(Boolean).map(id => String(id))
+    )];
 
-const canchaMap = new Map(
-  canchas.map(c => [String(c._id), c.nombre])
-);
+    if (canchaIds.length) {
+      const canchas = await Cancha.find({ _id: { $in: canchaIds } })
+        .select('_id nombre')
+        .lean();
 
-reservasFinales = reservasFinales.map(r => ({
-  ...r,
-  nombreCancha: r.canchaId ? canchaMap.get(String(r.canchaId)) || null : null
-}));
+      const canchaMap = new Map(canchas.map(c => [String(c._id), c.nombre]));
 
-    res.json(reservasConNombreClub);
+      reservasFinales = reservasFinales.map(r => ({
+        ...r,
+        nombreCancha: r.nombreCancha || (r.canchaId ? (canchaMap.get(String(r.canchaId)) || null) : null)
+      }));
+    }
+
+    return res.json(reservasFinales);
   } catch (error) {
     console.error('Error en /reservas-usuario:', error);
-    res.status(500).json({ error: 'Error al obtener reservas del usuario' });
+    return res.status(500).json({ error: 'Error al obtener reservas del usuario' });
   }
 });
+
 
 
 
