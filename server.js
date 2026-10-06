@@ -135,7 +135,7 @@ const { canchaId, fecha, hora, usuarioId: usuarioIdBody, email: emailBody, metod
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
     }
 
-    const codigoOTP = Math.floor(100000 + Math.random() * 900000).toString();
+    const codigoOTP = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60000);
 
     const reserva = new Reserva({
