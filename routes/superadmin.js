@@ -13,17 +13,11 @@ const Config = require('../models/config');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('Falta JWT_SECRET en .env');
 
-// Registrar primer superadmin (usalo UNA vez)
-router.post('/register', async (req, res) => {
-  try {
-    const { email, password, nombre } = req.body;
-    const passwordHash = await bcrypt.hash(password, 10);
-    const newSuperadmin = new Superadmin({ email, passwordHash, nombre });
-    await newSuperadmin.save();
-    res.status(201).json({ ok: true, msg: 'Superadmin creado' });
-  } catch (err) {
-    res.status(500).json({ ok: false, msg: err.message });
-  }
+// La creación de superadmins no se expone por HTTP.
+// Los superadmins existentes continúan usando /login.
+// Para alta administrativa futura se utilizará un procedimiento fuera de la API pública.
+router.post('/register', (req, res) => {
+  return res.status(404).json({ ok: false, msg: 'Ruta no disponible' });
 });
 
 // Login superadmin
