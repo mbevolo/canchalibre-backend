@@ -21,7 +21,11 @@ const PaymentEvent = require('./models/PaymentEvent');
 const crypto = require('crypto');
 const { sendMail } = require('./utils/email');
 const clubRoutes = require("./routes/club");
-const authClub = require('./middlewares/authClub'); 
+const authClub = require('./middlewares/authClub');
+const authUser = require('./middlewares/authUser');
+const optionalAuthUser = require('./middlewares/optionalAuthUser');
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/user'); 
 const statsRoutes = require("./routes/stats");
 const Reserva = require('./models/Reserva');
 
@@ -99,6 +103,8 @@ app.post('/login', sensitiveLimiter);
 
 app.use('/login-club', sensitiveLimiter);
 app.use('/api/mercadopago', sensitiveLimiter);
+app.use('/auth', sensitiveLimiter, authRoutes);
+app.use('/api/me', userRoutes);
 
 
 // ============================================
@@ -110,11 +116,20 @@ mongoose.connect(process.env.MONGO_URI)
 
 
 // Crear reserva pendiente y enviar email de confirmación
-app.post('/reservas/hold', async (req, res) => {
+app.post('/reservas/hold', optionalAuthUser, async (req, res) => {
   try {
-const { canchaId, fecha, hora, usuarioId, email, metodoPago } = req.body;
-console.log('📌 /reservas/hold metodoPago recibido:', metodoPago);
+const { canchaId, fecha, hora, usuarioId: usuarioIdBody, email: emailBody, metodoPago } = req.body;
+    let usuarioId = null;
+    let email = String(emailBody || '').trim().toLowerCase();
 
+    if (req.userId) {
+      const usuarioAutenticado = await Usuario.findById(req.userId).select('_id email').lean();
+      if (!usuarioAutenticado) return res.status(401).json({ error: 'Usuario no encontrado' });
+      usuarioId = usuarioAutenticado._id;
+      email = usuarioAutenticado.email;
+    } else {
+      usuarioId = usuarioIdBody || null;
+    }
 
     if (!canchaId || !fecha || !hora || !email) {
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
@@ -304,7 +319,9 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     // Intentar buscar usuarioId por email (opcional)
     let usuario = null;
     try {
-      usuario = await Usuario.findOne({ email: emailReservadoFinal });
+      usuario = reserva.usuarioId
+        ? await Usuario.findById(reserva.usuarioId)
+        : await Usuario.findOne({ email: emailReservadoFinal });
     } catch (e) {}
 
     // Calcular precio (igual que hacés en el mail)
@@ -1763,6 +1780,11 @@ const link = `https://canchalibre.ar/verificar-email.html?token=${token}&tipo=us
 
 // Asegurate de tener arriba: const bcrypt = require('bcrypt');
 
+app.post('/login', (req, res) => {
+  return res.status(410).json({ error: 'Ruta de login antigua. Usá /auth/login.' });
+});
+
+/* LEGACY LOGIN DISABLED
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -1794,6 +1816,7 @@ app.post('/login', async (req, res) => {
     return res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 });
+*/
 
 // Reenviar verificación (POST { email })
 // === Reenviar verificación de email ===
@@ -1836,6 +1859,11 @@ app.post('/reenviar-verificacion', async (req, res) => {
 
 
 
+app.get('/usuario/:email', (req, res) => {
+  return res.status(410).json({ error: 'Ruta antigua. Usá GET /auth/me.' });
+});
+
+/* LEGACY USER PROFILE
 app.get('/usuario/:email', async (req, res) => {
     try {
         const usuario = await Usuario.findOne({ email: req.params.email }, { password: 0 });
@@ -1845,6 +1873,7 @@ app.get('/usuario/:email', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener usuario' });
     }
 });
+*/
 
 app.post('/generar-link-pago/:reservaId', async (req, res) => {
     try {
@@ -1900,6 +1929,11 @@ app.get('/reserva/:id', authClub, async (req, res) => {
 });
 
 
+app.put('/usuario/:email', (req, res) => {
+    return res.status(410).json({ error: 'Ruta antigua. Usá PATCH /auth/me.' });
+});
+
+/* LEGACY USER UPDATE
 app.put('/usuario/:email', async (req, res) => {
     try {
         const { nombre, apellido, telefono } = req.body;
@@ -1914,6 +1948,7 @@ app.put('/usuario/:email', async (req, res) => {
         res.status(500).json({ error: 'Error al actualizar usuario' });
     }
 });
+*/
 
 // Endpoint para generar el link de pago para destacar club
 app.post('/club/:email/destacar-pago', async (req, res) => {
