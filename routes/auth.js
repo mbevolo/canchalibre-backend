@@ -23,11 +23,7 @@ function hashToken(token) {
 
 function issueAccessToken(usuario) {
   return jwt.sign(
-    {
-      sub: String(usuario._id),
-      role: 'user',
-      type: 'access'
-    },
+    { sub: String(usuario._id), role: 'user', type: 'access' },
     process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET,
     {
       expiresIn: ACCESS_TTL,
@@ -40,16 +36,18 @@ function issueAccessToken(usuario) {
 
 function setRefreshCookie(res, token) {
   const maxAge = REFRESH_DAYS * 24 * 60 * 60 * 1000;
+  const securePart = process.env.NODE_ENV === 'production' ? ' Secure;' : '';
   res.setHeader(
     'Set-Cookie',
-    `canchalibre_refresh=${encodeURIComponent(token)}; Max-Age=${Math.floor(maxAge / 1000)}; Path=/auth; HttpOnly; Secure; SameSite=Lax`
+    `canchalibre_refresh=${encodeURIComponent(token)}; Max-Age=${Math.floor(maxAge / 1000)}; Path=/auth; HttpOnly;${securePart} SameSite=Lax`
   );
 }
 
 function clearRefreshCookie(res) {
+  const securePart = process.env.NODE_ENV === 'production' ? ' Secure;' : '';
   res.setHeader(
     'Set-Cookie',
-    'canchalibre_refresh=; Max-Age=0; Path=/auth; HttpOnly; Secure; SameSite=Lax'
+    `canchalibre_refresh=; Max-Age=0; Path=/auth; HttpOnly;${securePart} SameSite=Lax`
   );
 }
 
@@ -72,26 +70,17 @@ async function createSession(usuario, req, res) {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Faltan credenciales' });
-    }
+    if (!email || !password) return res.status(400).json({ error: 'Faltan credenciales' });
 
     const usuario = await Usuario.findOne({ email: String(email).trim().toLowerCase() });
     const hash = usuario?.passwordHash || usuario?.password;
     const valid = usuario && hash ? await bcrypt.compare(password, hash) : false;
 
-    if (!valid) {
-      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
-    }
+    if (!valid) return res.status(401).json({ error: 'Email o contraseña incorrectos' });
 
     const verified = Boolean(usuario.emailVerified ?? usuario.emailVerificado ?? false);
-    if (!verified) {
-      return res.status(403).json({ error: 'Debes verificar tu email antes de iniciar sesión' });
-    }
-
-    if (usuario.activo === false) {
-      return res.status(403).json({ error: 'La cuenta está inactiva' });
-    }
+    if (!verified) return res.status(403).json({ error: 'Debes verificar tu email antes de iniciar sesión' });
+    if (usuario.activo === false) return res.status(403).json({ error: 'La cuenta está inactiva' });
 
     const accessToken = await createSession(usuario, req, res);
 
@@ -117,9 +106,8 @@ router.post('/refresh', async (req, res) => {
     const token = getCookie(req, 'canchalibre_refresh');
     if (!token) return res.status(401).json({ error: 'Sesión no disponible' });
 
-    const oldHash = hashToken(token);
     const session = await UserSession.findOne({
-      tokenHash: oldHash,
+      tokenHash: hashToken(token),
       revokedAt: null,
       expiresAt: { $gt: new Date() }
     });
@@ -192,9 +180,7 @@ router.get('/me', authUser, async (req, res) => {
     '_id nombre apellido telefono email activo emailVerificado emailVerified'
   ).lean();
 
-  if (!usuario || usuario.activo === false) {
-    return res.status(404).json({ error: 'Usuario no encontrado' });
-  }
+  if (!usuario || usuario.activo === false) return res.status(404).json({ error: 'Usuario no encontrado' });
 
   return res.json({
     id: String(usuario._id),
