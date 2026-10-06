@@ -20,7 +20,8 @@ const { celebrate, Joi, Segments, errors } = require('celebrate');
 const PaymentEvent = require('./models/PaymentEvent');
 const crypto = require('crypto');
 const { sendMail } = require('./utils/email');
-const clubRoutes = require("./routes/club"); 
+const clubRoutes = require("./routes/club");
+const authClub = require('./middlewares/authClub'); 
 const statsRoutes = require("./routes/stats");
 const Reserva = require('./models/Reserva');
 
@@ -665,10 +666,18 @@ app.get('/reservas-usuario/:email', async (req, res) => {
 
 
 // ✅ NUEVA RUTA: guardar access token del club usando el ID
-app.put('/club/:id/access-token', async (req, res) => {
+app.put('/club/:id/access-token', authClub, async (req, res) => {
   try {
     const clubId = (req.params.id || '').trim();
     const { accessToken } = req.body;
+
+    if (clubId !== String(req.clubId)) {
+      return res.status(403).json({ error: 'No autorizado para modificar este club' });
+    }
+
+    if (typeof accessToken !== 'string' || accessToken.trim().length < 10) {
+      return res.status(400).json({ error: 'Access Token inválido' });
+    }
 
     console.log("📩 Solicitud de guardado Access Token:");
     console.log("➡️ ID recibido:", clubId);
@@ -1018,19 +1027,24 @@ app.post('/registro-club', async (req, res) => {
 });
 
 
-app.put('/club/:id', async (req, res) => {
+app.put('/club/:id', authClub, async (req, res) => {
     const { nombre, telefono, provincia, localidad } = req.body;
 
+    if (String(req.params.id) !== String(req.clubId)) {
+        return res.status(403).json({ error: 'No autorizado para modificar este club' });
+    }
+
     try {
-        await Club.findByIdAndUpdate(req.params.id, {
-            nombre,
-            telefono,
-            provincia,
-            localidad
-        });
-        res.json({ ok: true });
+        const club = await Club.findByIdAndUpdate(
+            req.clubId,
+            { nombre, telefono, provincia, localidad },
+            { new: true }
+        ).select('nombre email telefono provincia localidad latitud longitud destacado destacadoHasta activo');
+
+        if (!club) return res.status(404).json({ error: 'Club no encontrado' });
+        res.json({ ok: true, club });
     } catch (err) {
-        console.error('❌ Error al actualizar club:', err);
+        console.error('❌ Error al actualizar club:', err.message);
         res.status(500).json({ error: 'Error al actualizar club' });
     }
 });
@@ -1208,7 +1222,7 @@ app.get('/canchas/:clubEmail', async (req, res) => {
     }
 });
 
-app.post('/canchas', async (req, res) => {
+app.post('/canchas', authClub, async (req, res) => {
   const { 
     nombre, deporte, precio, horaDesde, horaHasta, 
     diasDisponibles, clubEmail, duracionTurno,
@@ -1255,7 +1269,7 @@ app.post('/canchas', async (req, res) => {
 
 
 
-app.put('/canchas/:id', async (req, res) => {
+app.put('/canchas/:id', authClub, async (req, res) => {
   try {
     const { 
       nombre, deporte, precio, horaDesde, horaHasta, 
@@ -1278,6 +1292,12 @@ app.put('/canchas/:id', async (req, res) => {
       return res.status(400).json({ error: 'El horario "Hasta" debe ser mayor que el horario "Desde".' });
     }
 
+    const cancha = await Cancha.findById(req.params.id);
+    if (!cancha) return res.status(404).json({ error: 'Cancha no encontrada' });
+    if (String(cancha.clubEmail).toLowerCase() !== String(req.clubEmail).toLowerCase()) {
+      return res.status(403).json({ error: 'No autorizado para modificar esta cancha' });
+    }
+
     const update = {
       nombre,
       deporte,
@@ -1285,7 +1305,7 @@ app.put('/canchas/:id', async (req, res) => {
       horaDesde,
       horaHasta,
       diasDisponibles: Array.isArray(diasDisponibles) ? diasDisponibles : [],
-      clubEmail,
+      clubEmail: req.clubEmail,
       duracionTurno: Number(duracionTurno) || 60,
       nocturnoDesde: (nocturnoDesde === '' || nocturnoDesde === null) ? null : Number(nocturnoDesde),
       precioNocturno: (precioNocturno === '' || precioNocturno === null) ? null : Number(precioNocturno)
@@ -1302,8 +1322,14 @@ app.put('/canchas/:id', async (req, res) => {
 
 
 
-app.delete('/canchas/:id', async (req, res) => {
+app.delete('/canchas/:id', authClub, async (req, res) => {
     try {
+        const cancha = await Cancha.findById(req.params.id);
+        if (!cancha) return res.status(404).json({ error: 'Cancha no encontrada' });
+        if (String(cancha.clubEmail).toLowerCase() !== String(req.clubEmail).toLowerCase()) {
+            return res.status(403).json({ error: 'No autorizado para eliminar esta cancha' });
+        }
+
         await Cancha.findByIdAndDelete(req.params.id);
         res.json({ mensaje: 'Cancha eliminada correctamente' });
     } catch (error) {
@@ -1320,18 +1346,30 @@ app.get('/turnos', async (req, res) => {
     }
 });
 
-app.put('/turnos/:id', async (req, res) => {
+app.put('/turnos/:id', authClub, async (req, res) => {
     try {
-        await Turno.findByIdAndUpdate(req.params.id, req.body);
+        const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
+        if (!turno) return res.status(404).json({ error: 'Turno no encontrado o no pertenece al club' });
+
+        const camposPermitidos = ['deporte', 'fecha', 'hora', 'precio', 'usuarioReservado', 'emailReservado', 'pagado', 'metodoPago'];
+        const update = {};
+        for (const campo of camposPermitidos) {
+            if (req.body[campo] !== undefined) update[campo] = req.body[campo];
+        }
+
+        await Turno.updateOne({ _id: turno._id }, update);
         res.json({ mensaje: 'Turno actualizado correctamente' });
     } catch (error) {
         res.status(500).json({ error: 'Error al actualizar turno' });
     }
 });
 
-app.patch('/turnos/:id/cancelar', async (req, res) => {
+app.patch('/turnos/:id/cancelar', authClub, async (req, res) => {
     try {
-        await Turno.findByIdAndUpdate(req.params.id, {
+        const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
+        if (!turno) return res.status(404).json({ error: 'Turno no encontrado o no pertenece al club' });
+
+        await Turno.updateOne({ _id: turno._id }, {
             usuarioReservado: null,
             emailReservado: null,
             pagado: false
@@ -1490,7 +1528,10 @@ app.get('/turnos-generados', async (req, res) => {
 
 
 
-app.get('/reservas/:clubEmail', async (req, res) => {
+app.get('/reservas/:clubEmail', authClub, async (req, res) => {
+    if (String(req.params.clubEmail).toLowerCase() !== String(req.clubEmail).toLowerCase()) {
+        return res.status(403).json({ error: 'No autorizado para consultar este club' });
+    }
     try {
         const clubEmail = req.params.clubEmail;
         const club = await Club.findOne({ email: clubEmail });
@@ -1844,13 +1885,16 @@ notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
 });
 
 // ✅ NUEVA RUTA: obtener los datos de una reserva por ID (incluye teléfono)
-app.get('/reserva/:id', async (req, res) => {
+app.get('/reserva/:id', authClub, async (req, res) => {
     try {
         const reserva = await Turno.findById(req.params.id).populate('usuarioId');
 
         // 👇 Este log te muestra qué número tiene realmente el perfil
 
         if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+        if (String(reserva.club).toLowerCase() !== String(req.clubEmail).toLowerCase()) {
+            return res.status(403).json({ error: 'No autorizado para consultar esta reserva' });
+        }
         res.json(reserva);
     } catch (error) {
         console.error('❌ Error en /reserva/:id:', error);
@@ -2009,9 +2053,11 @@ app.get('/clubes', async (req, res) => {
 });
 
 
-app.patch('/turnos/:id/marcar-pagado', async (req, res) => {
+app.patch('/turnos/:id/marcar-pagado', authClub, async (req, res) => {
     try {
-        await Turno.findByIdAndUpdate(req.params.id, { pagado: true });
+        const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
+        if (!turno) return res.status(404).json({ error: 'Turno no encontrado o no pertenece al club' });
+        await Turno.updateOne({ _id: turno._id }, { pagado: true });
         res.json({ mensaje: 'Turno marcado como pagado' });
     } catch (error) {
         res.status(500).json({ error: 'Error al marcar como pagado' });
@@ -2207,8 +2253,7 @@ app.get('/club-id/:id', async (req, res) => {
       latitud: 1,
       longitud: 1,
       destacado: 1,
-      destacadoHasta: 1,
-      mercadoPagoAccessToken: 1
+      destacadoHasta: 1
     });
 
     if (!club) return res.status(404).json({ error: 'Club no encontrado' });
