@@ -1892,6 +1892,11 @@ app.get('/usuario/:email', async (req, res) => {
 });
 */
 
+app.post('/generar-link-pago/:reservaId', (req, res) => {
+    return res.status(410).json({ error: 'Ruta antigua. Usá POST /api/me/turnos/:id/payment-link.' });
+});
+
+/* LEGACY PAYMENT LINK
 app.post('/generar-link-pago/:reservaId', async (req, res) => {
     try {
         const reserva = await Turno.findById(req.params.reservaId);
