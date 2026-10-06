@@ -1,10 +1,13 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
 
 // Conexión a MongoDB Atlas
-mongoose.connect('mongodb+srv://turnolibre_user:TurnoLibre123@nube.g7usckv.mongodb.net/turnolibre?retryWrites=true&w=majority&appName=Nube', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => console.log('🟢 Conectado a MongoDB Atlas'))
+if (!process.env.MONGO_URI) {
+    throw new Error('Falta MONGO_URI en el entorno.');
+}
+
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('🟢 Conectado a MongoDB Atlas'))
   .catch(err => console.error('🔴 Error de conexión a MongoDB', err));
 
 const Cancha = mongoose.model('Cancha', new mongoose.Schema({
