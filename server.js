@@ -378,7 +378,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
 
       mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
       console.log('🏦 MP cobrador (club):', clubData.email);
-      console.log('🏦 MP token club termina en:', String(clubData.mercadoPagoAccessToken || '').slice(-6));
+      console.log('🏦 Token de MercadoPago del club cargado correctamente');
 
       // ✅ pasar club + turno al webhook para que pueda usar el token del club
       const clubEmailEnc = encodeURIComponent(String(clubData.email || cancha.clubEmail || ''));
@@ -679,9 +679,7 @@ app.put('/club/:id/access-token', authClub, async (req, res) => {
       return res.status(400).json({ error: 'Access Token inválido' });
     }
 
-    console.log("📩 Solicitud de guardado Access Token:");
-    console.log("➡️ ID recibido:", clubId);
-    console.log("➡️ Token recibido:", accessToken);
+    console.log("📩 Solicitud de guardado Access Token para club:", clubId);
 
     const club = await Club.findByIdAndUpdate(
       clubId,
@@ -694,8 +692,7 @@ app.put('/club/:id/access-token', authClub, async (req, res) => {
       return res.status(404).json({ error: 'No se encontró un club con ese ID' });
     }
 
-    console.log("✅ Token guardado correctamente para el club:");
-    console.log("✔️ Nuevo valor mercadoPagoAccessToken:", club.mercadoPagoAccessToken);
+    console.log("✅ Access Token guardado correctamente para club:", clubId);
 
     res.json({ mensaje: 'Access Token guardado correctamente' });
 
@@ -1058,7 +1055,7 @@ app.post('/login-club', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    console.log('📩 Datos recibidos:', { email, password });
+    console.log('📩 Intento de login de club:', email);
 
     const club = await Club.findOne({ email });
     if (!club) {
