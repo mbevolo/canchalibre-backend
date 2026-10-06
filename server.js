@@ -467,6 +467,11 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
 
 
 // 📨 Reenviar correo de confirmación de reserva
+app.post('/reservas/:id/reenviar', (req, res) => {
+  return res.status(410).json({ error: 'Ruta antigua. Usá POST /api/me/reservas/:id/resend-confirmation.' });
+});
+
+/* LEGACY RESEND
 app.post('/reservas/:id/reenviar', async (req, res) => {
   try {
     const reserva = await Reserva.findById(req.params.id);
@@ -533,6 +538,11 @@ app.post('/reservas/:id/reenviar', async (req, res) => {
 
 
 // 🗑️ Cancelar una reserva pendiente
+app.patch('/reservas/:id/cancelar', (req, res) => {
+  return res.status(410).json({ error: 'Ruta antigua. Usá PATCH /api/me/reservas/:id/cancel.' });
+});
+
+/* LEGACY CANCEL PENDING
 app.patch('/reservas/:id/cancelar', async (req, res) => {
   try {
     const reserva = await Reserva.findById(req.params.id);
@@ -551,6 +561,7 @@ app.patch('/reservas/:id/cancelar', async (req, res) => {
     res.status(500).json({ error: 'Error al cancelar la reserva pendiente.' });
   }
 });
+*/
 
 
 // Tarea automática: cada 5 minutos revisa clubes con destaque vencido y lo desactiva
@@ -616,6 +627,11 @@ function calcularPrecioTurno(cancha, inicioTurnoDate) {
 // ✅ RUTA PARA OBTENER LAS RESERVAS DE UN USUARIO POR EMAIL
 
 // ✅ Mostrar reservas confirmadas y pendientes del usuario
+app.get('/reservas-usuario/:email', (req, res) => {
+  return res.status(410).json({ error: 'Ruta antigua. Usá GET /api/me/reservas.' });
+});
+
+/* LEGACY USER RESERVATIONS
 app.get('/reservas-usuario/:email', async (req, res) => {
   try {
     const email = req.params.email.trim();
@@ -678,6 +694,7 @@ app.get('/reservas-usuario/:email', async (req, res) => {
     return res.status(500).json({ error: 'Error al obtener reservas del usuario' });
   }
 });
+*/
 
 
 
