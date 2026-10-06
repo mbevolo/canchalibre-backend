@@ -207,72 +207,11 @@ const { canchaId, fecha, hora, usuarioId: usuarioIdBody, email: emailBody, metod
 // ===============================
 // 🔁 REENVIAR CORREO DE CONFIRMACIÓN
 // ===============================
-app.post('/reservas/reenviar-confirmacion', async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Falta el email.' });
-
-    const reserva = await Reserva.findOne({
-      emailContacto: email,
-      estado: 'PENDING'
-    }).sort({ createdAt: -1 });
-
-    if (!reserva)
-      return res.status(404).json({ error: 'No hay reservas pendientes para este email.' });
-
-    if (new Date() > reserva.expiresAt) {
-      return res.status(400).json({ error: 'El enlace anterior expiró. Volvé a reservar.' });
-    }
-
-    // 🟦 Info de cancha y club
-    const cancha = await Cancha.findById(reserva.canchaId);
-    let club = null;
-    if (cancha && cancha.clubEmail) {
-      club = await Club.findOne({ email: cancha.clubEmail });
-    }
-
-    // 🟦 Calcular precio estimado
-    let precioCalculado = null;
-    try {
-      const [Y, M, D] = String(reserva.fecha).split('-').map(Number); // asume YYYY-MM-DD
-      const [h, m] = String(reserva.hora).split(':').map(Number);
-      const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
-      if (cancha) {
-        precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
-      }
-    } catch (e) {
-      console.error('⚠️ No se pudo calcular precio en /reservas/reenviar-confirmacion:', e);
-    }
-
-const link = `${process.env.APP_BASE_URL}/reservas/confirmar/${reserva._id}/${reserva.codigoOTP}`;
-
-    const html = `
-      <h2>Reenvío de confirmación de tu reserva</h2>
-      <p>Estos son los datos de tu reserva pendiente:</p>
-      <ul>
-        <li><strong>Club:</strong> ${club ? club.nombre : 'A confirmar'}</li>
-        <li><strong>Cancha:</strong> ${cancha ? cancha.nombre : 'Sin nombre'}</li>
-        <li><strong>Deporte:</strong> ${cancha ? cancha.deporte : ''}</li>
-        <li><strong>Fecha:</strong> ${reserva.fecha}</li>
-        <li><strong>Hora:</strong> ${reserva.hora}</li>
-        ${precioCalculado !== null ? `<li><strong>Precio estimado:</strong> $${precioCalculado}</li>` : ''}
-      </ul>
-
-      <hr/>
-
-      <p>Para confirmar la reserva, hacé clic en el siguiente enlace (si el enlace original sigue vigente):</p>
-      <p><a href="${link}">${link}</a></p>
-    `;
-
-    await sendMail(email, 'Confirmá tu reserva en CanchaLibre', html);
-
-    res.json({ mensaje: 'Correo reenviado correctamente.' });
-  } catch (error) {
-    console.error('❌ Error en /reservas/reenviar-confirmacion:', error);
-    res.status(500).json({ error: 'Error al reenviar el correo.' });
-  }
+app.post('/reservas/reenviar-confirmacion', (req, res) => {
+  return res.status(410).json({
+    error: 'Ruta antigua. Usá POST /api/me/reservas/:id/resend-confirmation.'
+  });
 });
-
 
 
 // Confirmar reserva desde el enlace del correo
