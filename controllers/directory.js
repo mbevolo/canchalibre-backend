@@ -23,6 +23,8 @@ const getClubes = async (req, res) => {
     } // búsqueda por nombre (opcional)
 
     const projection = {
+      direccion: 1,
+      servicios: 1,
       email: 1,
       nombre: 1,
       provincia: 1,
@@ -55,6 +57,8 @@ const getClubIdId = async (req, res) => {
 
     // Traemos el club por _id
     const club = await Club.findOne({ _id: id, activo: { $ne: false } }, {
+      direccion: 1,
+      servicios: 1,
       email: 1,
       nombre: 1,
       provincia: 1,

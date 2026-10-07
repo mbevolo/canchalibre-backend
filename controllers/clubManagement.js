@@ -303,7 +303,7 @@ const getClubEmail = async (req, res) => {
     const club = await Club.findOne({ email: req.params.email }).select(
       privateAccess
         ? '-passwordHash -resetToken -resetTokenExp -tokenVerificacion -tokenVerificacionExpira'
-        : '_id nombre email telefono provincia localidad latitud longitud destacado destacadoHasta mercadoPagoAccessToken',
+        : '_id nombre email telefono direccion descripcion servicios fotos provincia localidad latitud longitud destacado destacadoHasta mercadoPagoAccessToken',
     );
     if (!club) return res.status(404).json({ error: 'Club no encontrado' });
     const data = club.toObject();
