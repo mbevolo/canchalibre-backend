@@ -187,6 +187,15 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.ok(slots.length > 0);
     assert.ok(slots.every(slot => slot.emailReservado === null));
     assert.ok(!JSON.stringify(slots).includes(user.email));
+    assert.equal((await request('/turnos/' + turno._id)).status, 401);
+    assert.equal((await request('/turnos/' + turno._id, { token: adminToken })).status, 401);
+    const ownedTurno = await request('/turnos/' + turno._id, { token: clubToken });
+    assert.equal(ownedTurno.status, 200);
+    assert.equal((await ownedTurno.json()).usuarioId.passwordHash, undefined);
+    const foreignClub = await Club.create({ nombre: 'Foreign Club', email: 'foreign@example.com', telefono: '123', provincia: 'Cordoba', localidad: 'Test', passwordHash });
+    const foreignClubToken = require('jsonwebtoken').sign({ clubId: String(foreignClub._id) }, process.env.JWT_SECRET);
+    assert.equal((await request('/turnos/' + turno._id, { token: foreignClubToken })).status, 404);
+    assert.equal((await request('/turnos/' + turno._id + '/payment-link', { method: 'POST', token: foreignClubToken })).status, 404);
     assert.equal((await request('/turnos/' + turno._id + '/payment-link', { method: 'POST' })).status, 401);
     const originalCourtPreference = mercadopago.preferences.create;
     try {

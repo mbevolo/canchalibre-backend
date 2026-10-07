@@ -9,6 +9,7 @@ const turnoSchema = new mongoose.Schema({
   precio: Number,
   usuarioReservado: String,
   emailReservado: String,
+  telefonoReservado: String,
   canchaId: String,
   pagado: { type: Boolean, default: false },
   metodoPago: { type: String, enum: ['online', 'efectivo'], default: 'efectivo' },

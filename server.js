@@ -683,13 +683,14 @@ app.post(
       precio: Joi.number().min(0).required(),
       usuarioReservado: Joi.string().max(100).required(),
       emailReservado: Joi.string().email().required(),
+      telefonoReservado: Joi.string().trim().max(30).allow('').default(''),
       metodoPago: Joi.string().valid('online','efectivo').required(),
       canchaId: Joi.string().required()
     })
   }),
   async (req, res) => {
 
-    const { deporte, fecha, club, hora, precio, usuarioReservado, emailReservado, metodoPago, canchaId } = req.body;
+    const { deporte, fecha, club, hora, precio, usuarioReservado, emailReservado, metodoPago, canchaId, telefonoReservado } = req.body;
 
     try {
 
@@ -714,7 +715,7 @@ app.post(
         $or: [{ usuarioReservado: null }, { usuarioReservado: '' }]
       }, { $set: {
         deporte: cancha.deporte, club: cancha.clubEmail, fecha, hora, canchaId,
-        usuarioReservado, emailReservado, usuarioId: usuario?._id || null,
+        usuarioReservado, emailReservado, telefonoReservado, usuarioId: usuario?._id || null,
         precio: precioCalculado, pagado: false, metodoPago, bookingId: randomUUID(), pagoId: null, pagoMetodo: null, fechaPago: null
       } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
 
@@ -1201,6 +1202,16 @@ app.get('/turnos', authClub, async (req, res) => {
     }
 });
 
+app.get('/turnos/:id', authClub, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Identificador de turno inválido' });
+  try {
+    const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail })
+      .populate('usuarioId', 'nombre apellido email telefono');
+    if (!turno) return res.status(404).json({ error: 'Reserva no encontrada' });
+    return res.json(turno);
+  } catch (error) { return res.status(500).json({ error: 'Error al consultar reserva' }); }
+});
+
 app.put('/turnos/:id', authClub, async (req, res) => {
     try {
         const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
@@ -1530,9 +1541,7 @@ const reservasConNombre = reservasOrdenadas.map((r) => {
     usuarioNombre: r.usuarioDoc ? r.usuarioDoc.nombre : "",
     usuarioApellido: r.usuarioDoc ? r.usuarioDoc.apellido : "",
     usuarioEmail: r.usuarioDoc ? r.usuarioDoc.email : "",
-    usuarioTelefono: r.usuarioDoc && r.usuarioDoc.telefono
-      ? r.usuarioDoc.telefono
-      : (r.telefonoReservado || ""),  };
+    usuarioTelefono: r.telefonoReservado || r.usuarioDoc?.telefono || "",  };
 });
 
 
@@ -1946,14 +1955,18 @@ app.get('/clubes', async (req, res) => {
 
 
 app.patch('/turnos/:id/marcar-pagado', authClub, async (req, res) => {
-    try {
-        const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
-        if (!turno) return res.status(404).json({ error: 'Turno no encontrado o no pertenece al club' });
-        await Turno.updateOne({ _id: turno._id }, { pagado: true });
-        res.json({ mensaje: 'Turno marcado como pagado' });
-    } catch (error) {
-        res.status(500).json({ error: 'Error al marcar como pagado' });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Identificador inválido' });
+  try {
+    const turno = await Turno.findOneAndUpdate({
+      _id: req.params.id, club: req.clubEmail, pagado: false, usuarioReservado: { $nin: [null, ''] }
+    }, { $set: { pagado: true, pagoMetodo: 'manual', fechaPago: new Date() } }, { new: true });
+    if (!turno) {
+      const existing = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
+      if (!existing) return res.status(404).json({ error: 'Reserva no encontrada' });
+      if (!existing.usuarioReservado) return res.status(409).json({ error: 'La reserva está cancelada' });
     }
+    res.json({ mensaje: 'Turno marcado como pagado' });
+  } catch (error) { res.status(500).json({ error: 'Error al marcar como pagado' }); }
 });
 
 // ====================================================

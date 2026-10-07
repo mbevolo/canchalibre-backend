@@ -20,7 +20,9 @@ Trabajo exclusivamente sobre v2-development. Sin cambios en main ni despliegues.
 - ABM de canchas con validación de tipos, minutos, días, precios y duración; permisos del club propietario.
 - Edición de email del club migra sus canchas y turnos en una transacción.
 - Paneles de club y SuperAdmin escapan texto de registros antes de insertarlo en HTML.
-- Club: edición conserva días seleccionados, logout elimina JWT y links de pago usan ruta protegida vigente.
+- Club: edición conserva días seleccionados, logout elimina JWT y links de pago y consulta de turno usan rutas protegidas vigentes.
+- Reserva manual desde agenda conserva teléfono y muestra nombre de clientes sin cuenta. Enlace de pago en diálogo local, disponible con y sin teléfono, sin depender de ventanas emergentes.
+- Marcar pago manual solo opera sobre reservas activas, registra medio y fecha y no sobrescribe pagos previos. Cancelación pagada conserva reserva y muestra error claro en el panel.
 - Webhook: pendiente no se consume definitivamente; aprobado valida moneda, importe, club y referencia única de la reserva antes de marcar pagado. Pago y evento se guardan en una transacción.
 - Reutilizar un horario genera otra referencia; una aprobación tardía de la reserva anterior se rechaza.
 - Destacados: checkout autorizado por club, orden con precio y días fijados al comprar; aprobación transaccional, renovaciones acumuladas e idempotencia.
@@ -46,10 +48,10 @@ Estos resultados no garantizan ausencia de defectos o vulnerabilidades.
 
 ## Pendientes para cerrar la validación de V2
 
-- Chromium: buscador y detalle con capturas revisadas. Navegador + backend + MongoDB aislados: cookie HttpOnly, refresh, perfil, reserva, OTP, logout; SuperAdmin login, secciones, edición de club, configuración y logout; club login, ABM de canchas, agenda, lista de reservas, QR, estadísticas y logout. Bootstrap, Leaflet, FullCalendar, QRCode y Chart.js se sirven desde dependencias locales de prueba. Mapas/tiles y otros recursos de terceros siguen simulados.
+- Chromium: buscador y detalle con capturas revisadas. Navegador + backend + MongoDB aislados: cookie HttpOnly, refresh, perfil, reserva, OTP, logout; SuperAdmin login, secciones, edición de club, configuración y logout; club login, ABM de canchas, reserva manual desde agenda, nombre/teléfono, pago simulado y enlace WhatsApp sin enviarlo, enlace sin teléfono, cancelación impaga, rechazo de cancelación pagada, QR, estadísticas y logout. Bootstrap, Leaflet, FullCalendar, QRCode y Chart.js se sirven desde dependencias locales de prueba. Mapas/tiles y otros recursos de terceros siguen simulados.
 - MercadoPago sandbox con credenciales de prueba: checkout completo y recepción de webhook del proveedor.
 - Brevo con destinatario de prueba: entrega de verificación, OTP y recuperación de contraseña.
-- Casos adicionales de panel: reservar desde agenda, compartir pago por WhatsApp, reintegros y comportamiento con servicios externos reales. No se enviaron mensajes.
+- Reintegros y comportamiento con servicios externos reales. WhatsApp solo se preparó como enlace; no se enviaron mensajes.
 - Datos existentes: revisar índices y consistencia antes de aplicar cambios a una base compartida.
 - Migración de pagos antiguos: reservas sin bookingId mantienen referencia antigua; enlaces anteriores de destacados sin orden deben reconciliarse antes de desplegar esta versión.
 - Rendimiento bajo carga representativa y políticas de pagos/reintegros con operaciones reales.

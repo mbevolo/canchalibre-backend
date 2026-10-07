@@ -24,7 +24,7 @@ async function confirmReservation(reserva, code, fields) {
     return Turno.findOneAndUpdate({
       canchaId: String(reserva.canchaId), fecha: reserva.fecha, hora: reserva.hora,
       $or: [{ usuarioReservado: null }, { usuarioReservado: '' }]
-    }, { $set: { ...fields, bookingId: randomUUID(), pagoId: null, pagoMetodo: null, fechaPago: null } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true, session });
+    }, { $set: { ...fields, bookingId: randomUUID(), pagoId: null, pagoMetodo: null, fechaPago: null, telefonoReservado: null } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true, session });
   });
 }
 async function cancelTurno(id, scope) {
@@ -33,7 +33,7 @@ async function cancelTurno(id, scope) {
     if (!turno) throw failure(404, 'Reserva no encontrada');
     if (turno.pagado) throw failure(409, 'La reserva está pagada; gestioná primero el reintegro con el club');
     if (!turno.usuarioReservado) throw failure(409, 'La reserva ya está cancelada');
-    await Turno.updateOne({ _id: turno._id }, { $set: { usuarioReservado: null, emailReservado: null, usuarioId: null, pagado: false } }, { session });
+    await Turno.updateOne({ _id: turno._id }, { $set: { usuarioReservado: null, emailReservado: null, telefonoReservado: null, usuarioId: null, pagado: false } }, { session });
     await Reserva.updateMany({ canchaId: turno.canchaId, fecha: turno.fecha, hora: turno.hora, estado: 'CONFIRMED' }, { $set: { estado: 'CANCELLED' } }, { session });
     return turno;
   });
