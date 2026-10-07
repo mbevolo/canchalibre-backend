@@ -1,13 +1,14 @@
 {
   "name": "turnolibre-sever",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:integration": "node scripts/test-integration.cjs",
     "test:web": "node scripts/test-web.cjs",
     "test:load": "node scripts/test-load.cjs",
-    "audit:data": "node scripts/audit-data.cjs"
+    "audit:data": "node scripts/audit-data.cjs",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",

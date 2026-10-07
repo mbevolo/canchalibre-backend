@@ -13,4 +13,6 @@ const canchaSchema = new mongoose.Schema({
   precioNocturno: { type: Number, default: null }
 });
 
+canchaSchema.index({ clubEmail: 1 });
+
 module.exports = mongoose.models.Cancha || mongoose.model('Cancha', canchaSchema);

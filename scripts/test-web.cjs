@@ -14,7 +14,7 @@ const {chromium}=require(path.join(front, 'node_modules/playwright'));
   const express=require(back+'/node_modules/express'),cron=require(back+'/node_modules/node-cron');
   const originalListen=express.application.listen;express.application.listen=function(){api=originalListen.call(this,0,'127.0.0.1');return api;};cron.schedule=()=>({stop(){}});
   const email= require.resolve(back+'/utils/email');require.cache[email]={id:email,filename:email,loaded:true,exports:{sendMail:async()=>{}}};
-  require(back+'/server');await mongoose.connection.asPromise();if(!api.listening)await new Promise(r=>api.once('listening',r));apiBase='http://127.0.0.1:'+api.address().port;
+  await require(back+'/server').startServer();await mongoose.connection.asPromise();if(!api.listening)await new Promise(r=>api.once('listening',r));apiBase='http://127.0.0.1:'+api.address().port;
   const Usuario=require(back+'/models/Usuario'),Club=require(back+'/models/Club'),Cancha=require(back+'/models/Cancha'),Reserva=require(back+'/models/Reserva');
   const hash=await require(back+'/node_modules/bcryptjs').hash('Web-test-123!',4);
   const user=await Usuario.create({email:'web@example.com',nombre:'Prueba',apellido:'Web',telefono:'123',passwordHash:hash,emailVerificado:true});
@@ -78,7 +78,7 @@ const {chromium}=require(path.join(front, 'node_modules/playwright'));
   const sdk=require(back+'/utils/mercadopago');const originalPreference=sdk.preferences.create;
   try {
     await Club.updateOne({_id:club._id},{$set:{mercadoPagoAccessToken:'TEST-browser-club'}});
-    sdk.preferences.create=async(body,options)=>{assert.equal(options.access_token,'TEST-browser-club');assert.equal(body.external_reference,require(back+'/utils/paymentWrites').paymentReference(manual));return {body:{init_point:'https://sandbox.example.test/manual-payment'}};};
+    sdk.preferences.create=async(body,options)=>{assert.equal(options.access_token,'TEST-browser-club');assert.equal(body.external_reference,require(back+'/services/payments').paymentReference(manual));return {body:{init_point:'https://sandbox.example.test/manual-payment'}};};
     const [linkResponse]=await Promise.all([page.waitForResponse(r=>r.url()===apiBase+'/turnos/'+manual._id+'/payment-link'),manualRow.locator('.generar-pago').click()]).catch(e=>{console.log('Payment request diagnosis',dialogs,errors);throw e;});assert.equal(linkResponse.status(),200,await linkResponse.text());await page.waitForSelector('#club-payment-dialog[open]',{timeout:5000}).catch(e=>{console.log('Payment dialog diagnosis',dialogs,errors);throw e;});
     assert.equal(await page.locator('#club-payment-dialog a').first().getAttribute('href'),'https://sandbox.example.test/manual-payment');
     const share=page.locator('#club-payment-dialog a').filter({hasText:'Compartir por WhatsApp'});assert.ok((await share.getAttribute('href')).startsWith('https://wa.me/5493534000000?'));

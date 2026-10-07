@@ -34,8 +34,8 @@ Trabajo exclusivamente sobre v2-development. Sin cambios en main ni despliegues.
 
 ## Validación
 
-- Backend: 8 pruebas unitarias y un recorrido HTTP de integración con MongoDB local descartable.
-- Frontend: 12 pruebas con DOM simulado, verificación sintáctica de scripts externos e inline y recorrido adicional en Chromium.
+- Backend: 13 pruebas unitarias y un recorrido HTTP de integración con MongoDB local descartable.
+- Frontend: 13 pruebas con DOM simulado, verificación sintáctica de scripts externos e inline y recorrido adicional en Chromium.
 - Texto con marcado HTML probado en ambos paneles: se muestra como texto sin ejecutar contenido.
 - Integración: login, refresh concurrente, suspensión, privacidad pública y administrativa, roles, invitado, reserva, confirmación concurrente, cancelación, estadísticas históricas y webhook simulado pendiente/aprobado/importe incorrecto/duplicado.
 - Fallas de escritura inyectadas verifican rollback de confirmación, cancelación y pago, seguido de reintento exitoso. Prueba de pago tardío tras reutilizar un horario.
@@ -79,3 +79,22 @@ La migración del SDK sigue los ejemplos del repositorio oficial https://github.
 - Falta acordar plazo, reintegro total/parcial, excepciones por cancelación del club y quién puede autorizar cada caso. No se fijó automáticamente una penalidad ni se efectuaron reintegros.
 
 Documentación del proveedor: https://www.mercadopago.com.ar/developers/es/docs/sales-processing/cancellations-and-refunds
+
+## Arquitectura del backend
+
+server.js queda dedicado al arranque y cierre. app.js crea Express sin conectar MongoDB, abrir puertos ni programar tareas. config separa HTTP/CORS y conexión; routes define endpoints y middleware; controllers procesa solicitudes por área; services contiene lógica compartida de reservas y pagos; validations contiene esquemas; jobs registra expiraciones y destacados.
+
+Se extrajeron los 42 handlers activos del monolito. Los bloques legacy comentados se retiraron sin volver a habilitar rutas. Las rutas retiradas que respondían 410 conservan esa respuesta. El arranque espera MongoDB antes de escuchar y el cierre detiene tareas, HTTP y conexión. npm start ejecuta server.js.
+
+Validación de la separación: unitarias (incluye creación sin efectos externos y fallo de conexión sin listener), integración HTTP con MongoDB, Chromium usuario/club/SuperAdmin y carga sintética aprobados. La auditoría y reintegros reales continúan pendientes de los accesos/política acordados.
+
+## Continuación de etapas 4, 5 y 6
+
+- Disponibilidad valida filtros/fechas reales, excluye clubes inactivos, aplica club antes de leer/generar canchas y calcula semanas según fecha argentina con calendario UTC. Servicio puro con pruebas de horarios, privacidad, 90 min, nocturno y cierre 24:00. Datos legacy malformados no generan bucles.
+- Índices de apoyo por club en canchas y club/fecha en turnos. Revisión de índices sobre una copia sigue pendiente antes de despliegue.
+- Benchmark actualizado: búsqueda de todos los clubes p95 146 ms; club seleccionado p95 32 ms (100 solicitudes por caso, concurrencia 10, fixture 10 clubes/100 canchas/1.000 turnos). Es una comparación entre alcances distintos en entorno local, no una mejora garantizada del hosting. Conserva una reserva entre 20 intentos concurrentes.
+- Expiración de destacados actualiza lotes mediante una condición atómica, evitando el ciclo leer/guardar que podía borrar renovaciones recientes; tareas sin solapamiento.
+- Buscador informa carga, cantidad, búsqueda vacía y error; permite reintentar, bloquea solicitudes duplicadas y anuncia estado mediante aria-live/aria-busy. Botones de reserva usan eventos en lugar de JavaScript interpolado en HTML. Capturas de escritorio y ancho 390 px revisadas; sin desbordamiento horizontal.
+- API responde JSON para rutas inexistentes, JSON malformado y origen no autorizado; no muestra stack interno.
+
+Estado del plan: etapa 2 (separación del monolito) realizada; etapas 4/5 ampliadas con cambios concretos, no una auditoría de infraestructura ni un rediseño integral. Etapa 6 ampliada a 13 unitarias backend, 13 frontend, integración, dos recorridos Chromium y benchmark. Etapas externas, datos existentes y reintegros mantienen sus pendientes. Ver ARCHITECTURE.md para responsabilidades y comandos.

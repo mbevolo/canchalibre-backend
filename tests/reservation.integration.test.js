@@ -32,7 +32,7 @@ test('login, refresh, reservation ownership, confirmation and logout', {
   let server;
   express.application.listen = function () { server = originalListen.call(this, 0, '127.0.0.1'); return server; };
   try {
-    require('../server');
+    await require('../server').startServer();
     await mongoose.connection.asPromise();
     if (!server.listening) await new Promise(resolve => server.once('listening', resolve));
     const base = 'http://127.0.0.1:' + server.address().port;
@@ -184,6 +184,12 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal(String(turno.usuarioId), String(user._id));
     const availability = await request('/turnos-generados?fecha=2030-01-10');
     const slots = await availability.json();
+    assert.equal((await request('/turnos-generados?fecha=2030-02-30')).status, 400);
+    assert.equal((await request('/turnos-generados?club=a&club=b')).status, 400);
+    assert.deepEqual(await (await request('/turnos-generados?fecha=2030-01-10&club=unknown@example.com')).json(), []);
+    const filteredSlots = await (await request('/turnos-generados?fecha=2030-01-10&club=club%40canchalibre.local')).json();
+    assert.ok(filteredSlots.length > 0);
+    assert.ok(filteredSlots.every(s => s.club === clubFixture.email));
     assert.ok(slots.length > 0);
     assert.ok(slots.every(slot => slot.emailReservado === null));
     assert.ok(!JSON.stringify(slots).includes(user.email));
@@ -201,13 +207,13 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     try {
       mercadopago.preferences.create = async (body, options) => {
         assert.equal(options.access_token, 'TEST-private-club-token');
-        assert.equal(body.external_reference, require('../utils/paymentWrites').paymentReference(turno));
+        assert.equal(body.external_reference, require('../services/payments').paymentReference(turno));
         return { body: { init_point: 'https://sandbox.example.test/court' } };
       };
       assert.equal((await request('/turnos/' + turno._id + '/payment-link', { method: 'POST', token: clubToken })).status, 200);
     } finally { mercadopago.preferences.create = originalCourtPreference; }
     const webhook = '/api/mercadopago/webhook?club=club%40canchalibre.local&turno=' + turno._id;
-    paymentResponse = { status: 'pending', external_reference: require('../utils/paymentWrites').paymentReference(turno), transaction_amount: turno.precio, currency_id: 'ARS' };
+    paymentResponse = { status: 'pending', external_reference: require('../services/payments').paymentReference(turno), transaction_amount: turno.precio, currency_id: 'ARS' };
     assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 200);
     assert.equal((await Turno.findById(turno._id)).pagado, false);
     paymentResponse = { ...paymentResponse, status: 'approved', transaction_amount: 1 };
@@ -250,7 +256,7 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal(String((await Turno.findById(rollbackTurno._id)).usuarioId), String(user._id));
     assert.equal((await Reserva.findById(rollback._id)).estado, 'CONFIRMED');
     assert.equal((await request('/api/me/turnos/' + rollbackTurno._id + '/cancel', { method: 'PATCH', token: renewed.accessToken })).status, 200);
-    paymentResponse = { status: 'approved', external_reference: require('../utils/paymentWrites').paymentReference(rollbackTurno), transaction_amount: rollbackTurno.precio, currency_id: 'ARS' };
+    paymentResponse = { status: 'approved', external_reference: require('../services/payments').paymentReference(rollbackTurno), transaction_amount: rollbackTurno.precio, currency_id: 'ARS' };
     const rebooking = await Reserva.create({ canchaId: cancha._id, usuarioId: user._id, emailContacto: user.email, fecha: rollback.fecha, hora: rollback.hora, codigoOTP: '456789', expiresAt: new Date(Date.now() + 600000) });
     assert.equal((await request('/reservas/confirmar/' + rebooking._id + '/' + rebooking.codigoOTP)).status, 302);
     const lateWebhook = '/api/mercadopago/webhook?club=club%40canchalibre.local&turno=' + rollbackTurno._id;
@@ -266,8 +272,21 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal((await request('/turnos', { token: clubToken })).status, 200);
     await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });
     assert.equal((await request('/turnos', { token: clubToken })).status, 403);
+    assert.deepEqual(await (await request('/turnos-generados?fecha=2030-01-10&club=renamed@example.com')).json(), []);
     await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });
     assert.equal((await request('/turnos', { token: clubToken })).status, 200);
+    const { expireFeatured, expirePending } = require('../services/maintenance');
+    const maintenanceNow = new Date();
+    const expiredClub = await Club.create({ nombre: 'Expired Club', email: 'expired@example.com', telefono: '123', provincia: 'Cordoba', localidad: 'Test', passwordHash, destacado: true, destacadoHasta: new Date(maintenanceNow.getTime() - 1000) });
+    await expireFeatured(maintenanceNow);
+    assert.equal((await Club.findById(expiredClub._id)).destacado, false);
+    assert.equal((await Club.findById(clubFixture._id)).destacado, true, 'A current renewal is preserved');
+    const expiredHold = await Reserva.create({ canchaId: cancha._id, fecha: '2030-01-10', hora: '20:00', codigoOTP: '234567', expiresAt: new Date(maintenanceNow.getTime() - 1000) });
+    await expirePending(maintenanceNow);
+    assert.equal((await Reserva.findById(expiredHold._id)).estado, 'EXPIRED');
+    assert.equal((await Reserva.findById(guestReservation._id)).estado, 'PENDING');
+    await Club.deleteOne({ _id: expiredClub._id });
+    await Reserva.deleteOne({ _id: expiredHold._id });
     const { dataAudit } = require('../utils/dataAudit');
     const healthy = await dataAudit(mongoose.connection.db);
     assert.equal(healthy.uniqueSlotIndex, true);

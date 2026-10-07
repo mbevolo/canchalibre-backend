@@ -1,4 +1,4 @@
-const { paymentReference } = require('../utils/paymentWrites');
+const { paymentReference } = require('../services/payments');
 const express = require('express');
 const crypto = require('crypto');
 const mercadopago = require('../utils/mercadopago');
@@ -9,7 +9,7 @@ const Club = require('../models/Club');
 const Cancha = require('../models/Cancha');
 const authUser = require('../middlewares/authUser');
 const { sendMail } = require('../utils/email');
-const { cancelTurno } = require('../utils/reservationWrites');
+const { cancelTurno } = require('../services/reservations');
 
 const router = express.Router();
 router.param('id', (req, res, next, id) => {

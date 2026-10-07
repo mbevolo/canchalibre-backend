@@ -11,7 +11,7 @@ const mongoose = require('mongoose'), express = require('express'), cron = requi
     express.application.listen = function () { api = originalListen.call(this, 0, '127.0.0.1'); return api; };
     cron.schedule = () => ({ stop() {} });
     const email = require.resolve('../utils/email'); require.cache[email] = { id: email, filename: email, loaded: true, exports: { sendMail: async () => {} } };
-    require('../server'); await mongoose.connection.asPromise();
+    await require('../server').startServer(); await mongoose.connection.asPromise();
     if (!api.listening) await new Promise(r => api.once('listening', r));
     const Club = require('../models/Club'), Cancha = require('../models/Cancha'), Turno = require('../models/Turno');
     await Promise.all([Club.init(), Cancha.init(), Turno.init()]);
@@ -29,7 +29,7 @@ const mongoose = require('mongoose'), express = require('express'), cron = requi
       durations.sort((a, b) => a - b);
       return { requests: durations.length, concurrency: 10, p50Ms: Math.round(durations[49]), p95Ms: Math.round(durations[94]), elapsedMs: Math.round(performance.now() - begin) };
     }
-    const results = { fixture: { clubs: 10, courts: 100, slots: 1000 }, publicClubs: await measure('/clubes'), availability: await measure('/turnos-generados?fecha=2030-01-10') };
+    const results = { fixture: { clubs: 10, courts: 100, slots: 1000 }, publicClubs: await measure('/clubes'), availability: await measure('/turnos-generados?fecha=2030-01-10'), selectedClub: await measure('/turnos-generados?fecha=2030-01-10&club=club0%40example.com') };
     const token = require('jsonwebtoken').sign({ clubId: String(clubs[0]._id) }, process.env.JWT_SECRET);
     const booking = { canchaId: String(courts[0]._id), deporte: 'padel', club: clubs[0].email, fecha: '2030-01-10', hora: '18:00', precio: 1000, usuarioReservado: 'Concurrent', emailReservado: 'test@example.com', metodoPago: 'efectivo' };
     const responses = await Promise.all(Array.from({ length: 20 }, () => fetch(base + '/reservar-turno', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(booking) })));

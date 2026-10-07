@@ -1,6 +1,6 @@
 const Joi = require('joi');
 const Cancha = require('../models/Cancha');
-const { transaction, failure } = require('../utils/reservationWrites');
+const { transaction, failure } = require('../services/reservations');
 // @ts-nocheck
 
 const express = require('express');
@@ -13,7 +13,7 @@ const superadminAuth = require('../middlewares/superadminAuth');
 const Turno = require('../models/Turno');
 const router = express.Router();
 const Config = require('../models/config');
-const { cancelTurno } = require('../utils/reservationWrites');
+const { cancelTurno } = require('../services/reservations');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('Falta JWT_SECRET en .env');
 

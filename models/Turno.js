@@ -27,4 +27,6 @@ const turnoSchema = new mongoose.Schema({
 // Evitar duplicados: misma cancha + misma fecha + misma hora
 turnoSchema.index({ canchaId: 1, fecha: 1, hora: 1 }, { unique: true, sparse: true });
 
+turnoSchema.index({ club: 1, fecha: 1 });
+
 module.exports = mongoose.models.Turno || mongoose.model('Turno', turnoSchema);
