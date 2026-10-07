@@ -36,6 +36,12 @@ async function seedV2Test({ env = process.env, connection = require('mongoose').
       } }, { upsert: true, runValidators: true });
     }
   }
+  // Cargar la galería una sola vez; conservar posteriores cambios desde el panel.
+  const profile = require('./club-panel-profile.json');
+  await Club.updateOne({
+    email: 'panel-club@fixtures.canchalibre.invalid',
+    testProfileSeeded: { $ne: true },
+  }, { $set: { ...profile, testProfileSeeded: true } }, { runValidators: true });
   return true;
 }
 module.exports = { seedV2Test, isTestDeployment };

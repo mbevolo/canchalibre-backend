@@ -5,6 +5,7 @@ const clubSchema = new mongoose.Schema({
   descripcion: { type: String, default: '' },
   servicios: { type: [String], default: [] },
   fotos: { type: [String], default: [] },
+  testProfileSeeded: { type: Boolean, select: false },
   authVersion: { type: Number, default: 0 },
   nombre: { type: String, required: true },
   email: { type: String, required: true, unique: true },
