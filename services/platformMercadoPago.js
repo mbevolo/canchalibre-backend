@@ -29,7 +29,7 @@ function status(config) {
   return {
     configured: Boolean(config?.mpTokenEncrypted || process.env.MP_ACCESS_TOKEN),
     source: config?.mpTokenEncrypted ? 'panel' : process.env.MP_ACCESS_TOKEN ? 'servidor' : null,
-    account: config?.mpAccount || null,
+    account: config?.mpAccount?.id ? config.mpAccount : null,
     verifiedAt: config?.mpVerifiedAt || null,
     webhookConfigured: Boolean(config?.mpWebhookEncrypted || process.env.MP_FEATURED_WEBHOOK_SECRET || process.env.MP_WEBHOOK_SECRET),
     webhookUrl: (process.env.APP_BASE_URL || 'https://api.canchalibre.ar').replace(/\/$/, '') + '/api/mercadopago/destacado-webhook',

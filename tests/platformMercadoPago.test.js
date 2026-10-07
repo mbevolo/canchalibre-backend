@@ -10,6 +10,7 @@ test('platform secrets are encrypted with integrity and never included in status
     assert.ok(!encrypted.includes(value));
     const parts = encrypted.split('.'); parts[3] = Buffer.from('tampered').toString('base64');
     assert.throws(() => platform.decrypt(parts.join('.')));
+    assert.equal(platform.status({ mpAccount: {} }).account, null);
     const status = JSON.stringify(platform.status({ mpTokenEncrypted: encrypted, mpWebhookEncrypted: encrypted }));
     assert.ok(!status.includes(encrypted) && !status.includes(value));
   } finally { if (old === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = old; }
