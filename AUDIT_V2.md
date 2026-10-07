@@ -34,7 +34,7 @@ Estos resultados no garantizan ausencia de defectos o vulnerabilidades.
 
 ## Pendientes para cerrar la validación de V2
 
-- Chromium: buscador, detalle, reserva con JWT y logout pasaron con API y recursos externos simulados; capturas revisadas y contraste del encabezado de detalle corregido. Pendiente Leaflet, CSS externos y cookies contra backend real.
+- Chromium: buscador, detalle, reserva con JWT y logout pasaron con API y recursos externos simulados; capturas revisadas y contraste del encabezado de detalle corregido. También pasó navegador + backend + MongoDB aislados: cookie HttpOnly, refresh entre páginas, perfil, reserva, OTP y logout. Pendiente Leaflet y recursos CSS externos.
 - MercadoPago sandbox con credenciales de prueba: checkout completo y recepción de webhook del proveedor.
 - Brevo con destinatario de prueba: entrega de verificación, OTP y recuperación de contraseña.
 - Paneles completos de club y SuperAdmin: recorridos funcionales de agenda, ABM y estadísticas.
