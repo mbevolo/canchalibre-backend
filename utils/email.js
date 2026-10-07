@@ -19,9 +19,8 @@ async function sendMail(to, subject, html) {
       }
     );
 
-    console.log("📧 Email enviado:", response.data);
   } catch (err) {
-    console.error("❌ Error enviando email vía Brevo API:", err.response?.data || err);
+    console.error("❌ Error enviando email vía Brevo API:");
     throw err;
   }
 }

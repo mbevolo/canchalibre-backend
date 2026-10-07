@@ -123,7 +123,7 @@ const postReservarTurno = async (req, res) => {
   } catch (error) {
     if (error.code === 11000)
       return res.status(409).json({ error: 'El turno ya está reservado' });
-    console.error('❌ Error en /reservar-turno:', error);
+    console.error("❌ Error en /reservar-turno:");
     res.status(500).json({ error: 'Error al reservar turno' });
   }
 };
@@ -400,7 +400,7 @@ const getReservasClubEmail = async (req, res) => {
 
     res.json(reservasConNombre);
   } catch (error) {
-    console.error('Error al obtener reservas:', error);
+    console.error("Error al obtener reservas:");
     res.status(500).json({ error: 'Error al obtener reservas' });
   }
 };

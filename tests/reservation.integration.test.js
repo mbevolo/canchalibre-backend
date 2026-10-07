@@ -13,6 +13,7 @@ test('login, refresh, reservation ownership, confirmation and logout', {
   process.env.NODE_ENV = 'test';
   process.env.FRONT_URL = 'http://localhost:8080';
   process.env.MP_ACCESS_TOKEN = 'TEST-isolated';
+  process.env.MP_WEBHOOK_SECRET = 'isolated-webhook-secret';
   const mongoose = require('mongoose');
   const express = require('express');
   const cron = require('node-cron');
@@ -55,6 +56,16 @@ test('login, refresh, reservation ownership, confirmation and logout', {
       if (token) headers.Authorization = 'Bearer ' + token;
       if (cookie) headers.Cookie = cookie;
       if (body) headers['Content-Type'] = 'application/json';
+      if (path.includes('webhook')) {
+        const url = new URL(path, base);
+        const id = String(body.data.id);
+        url.searchParams.set('data.id', id);
+        headers['x-request-id'] = 'integration-request';
+        const ts = '1704908010';
+        const hash = require('node:crypto').createHmac('sha256', process.env.MP_WEBHOOK_SECRET).update(`id:${id.toLowerCase()};request-id:integration-request;ts:${ts};`).digest('hex');
+        headers['x-signature'] = `ts=${ts},v1=${hash}`;
+        path = url.pathname + url.search;
+      }
       return fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, redirect: 'manual' });
     }
     const publicClub = await request('/club/club@canchalibre.local');

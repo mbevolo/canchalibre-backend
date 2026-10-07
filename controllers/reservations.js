@@ -92,10 +92,7 @@ const postReservasHold = async (req, res) => {
         precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
       }
     } catch (e) {
-      console.error(
-        '⚠️ No se pudo calcular precio para el mail de reserva:',
-        e,
-      );
+      console.error("⚠️ No se pudo calcular precio para el mail de reserva:");
     }
 
     const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
@@ -128,7 +125,7 @@ const postReservasHold = async (req, res) => {
       reservaId: reserva._id,
     });
   } catch (error) {
-    console.error('❌ Error en /reservas/hold:', error);
+    console.error("❌ Error en /reservas/hold:");
     res.status(500).json({ error: 'Error al crear reserva pendiente.' });
   }
 };
@@ -161,16 +158,11 @@ const getReservasConfirmarIdCode = async (req, res) => {
 
     const cancha = await Cancha.findById(reserva.canchaId);
     if (!cancha) {
-      console.log(
-        '❌ No se encontró Cancha para crear Turno:',
-        reserva.canchaId,
-      );
       return res.send('❌ No se encontró la cancha para confirmar la reserva.');
     }
 
     const emailReservadoFinal = (reserva.emailContacto || '').trim();
     if (!emailReservadoFinal) {
-      console.log('❌ Reserva sin emailContacto:', reserva._id);
       return res.send('❌ La reserva no tiene email de contacto.');
     }
 
@@ -190,7 +182,7 @@ const getReservasConfirmarIdCode = async (req, res) => {
       const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
       precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
     } catch (e) {
-      console.error('⚠️ No se pudo calcular precio al confirmar:', e);
+      console.error("⚠️ No se pudo calcular precio al confirmar:");
     }
 
     const turno = await confirmReservation(reserva, code, {
@@ -206,23 +198,10 @@ const getReservasConfirmarIdCode = async (req, res) => {
       pagado: false,
       metodoPago: reserva.metodoPago || 'efectivo',
     });
-    console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
 
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
-    console.log('🧾 CONFIRM metodoPago reserva:', reserva.metodoPago);
-    console.log('🧾 CONFIRM metodoPago turno:', turno.metodoPago);
 
     const metodoFinal = turno.metodoPago || reserva.metodoPago || 'efectivo';
-    console.log('🧾 CONFIRM metodoFinal:', metodoFinal);
-
-    if (metodoFinal !== 'online') {
-      console.log(
-        '🚫 NO entra a MercadoPago porque metodoFinal es:',
-        metodoFinal,
-      );
-    } else {
-      console.log('✅ ENTRA a MercadoPago (metodoFinal=online)');
-    }
 
     if (metodoFinal === 'online') {
       // ✅ cobrar en la cuenta del CLUB dueño de la cancha
@@ -234,9 +213,6 @@ const getReservasConfirmarIdCode = async (req, res) => {
             '❌ El club no tiene configurado su Access Token de MercadoPago.',
           );
       }
-
-      console.log('🏦 MP cobrador (club):', clubData.email);
-      console.log('🏦 Token de MercadoPago del club cargado correctamente');
 
       // ✅ pasar club + turno al webhook para que pueda usar el token del club
       const clubEmailEnc = encodeURIComponent(
@@ -274,8 +250,7 @@ const getReservasConfirmarIdCode = async (req, res) => {
           access_token: clubData.mercadoPagoAccessToken,
         });
       } catch (e) {
-        console.error('❌ Error creando preferencia MP:', e?.message || e);
-        console.error('❌ Detalle MP:', e?.response?.data || e);
+        console.error("❌ Error creando preferencia MP:");
         return res
           .status(500)
           .send('❌ Error creando preferencia de MercadoPago.');
@@ -283,17 +258,10 @@ const getReservasConfirmarIdCode = async (req, res) => {
 
       const body = resp?.body || {};
 
-      console.log('💰 MP collector_id:', body?.collector_id);
-      console.log('🔗 MP init_point:', body?.init_point);
-      console.log('🔗 MP sandbox_init_point:', body?.sandbox_init_point);
-
       const tokenClub = String(clubData?.mercadoPagoAccessToken || '');
       const esSandbox = tokenClub.startsWith('TEST-');
 
       const urlCheckout = esSandbox ? body.sandbox_init_point : body.init_point;
-
-      console.log('🧪 MP modo:', esSandbox ? 'SANDBOX' : 'PRODUCCION');
-      console.log('🔗 MP redirect:', urlCheckout);
 
       if (!urlCheckout) {
         return res
@@ -310,7 +278,7 @@ const getReservasConfirmarIdCode = async (req, res) => {
     );
   } catch (error) {
     if (error.status) return res.status(error.status).send(error.message);
-    console.error('❌ Error en confirmación de reserva:', error);
+    console.error("❌ Error en confirmación de reserva:");
     return res.status(500).send('Error confirmando la reserva');
   }
 };

@@ -19,8 +19,6 @@ const putClubIdAccessToken = async (req, res) => {
       return res.status(400).json({ error: 'Access Token inválido' });
     }
 
-    console.log('📩 Solicitud de guardado Access Token para club:', clubId);
-
     const club = await Club.findByIdAndUpdate(
       clubId,
       { mercadoPagoAccessToken: accessToken },
@@ -28,17 +26,14 @@ const putClubIdAccessToken = async (req, res) => {
     );
 
     if (!club) {
-      console.log('❌ No se encontró un club con ese ID.');
       return res
         .status(404)
         .json({ error: 'No se encontró un club con ese ID' });
     }
 
-    console.log('✅ Access Token guardado correctamente para club:', clubId);
-
     res.json({ mensaje: 'Access Token guardado correctamente' });
   } catch (error) {
-    console.error('🔥 Error al guardar Access Token:', error);
+    console.error("🔥 Error al guardar Access Token:");
     res.status(500).json({ error: 'Error al guardar Access Token' });
   }
 };
@@ -143,7 +138,7 @@ const postRegistroClub = async (req, res) => {
         'Club registrado. Revisá tu email para verificar la cuenta antes de iniciar sesión.',
     });
   } catch (error) {
-    console.error('❌ Error en /registro-club:', error);
+    console.error("❌ Error en /registro-club:");
 
     if (error.name === 'ValidationError') {
       return res.status(400).json({
@@ -176,7 +171,7 @@ const putClubId = async (req, res) => {
     if (!club) return res.status(404).json({ error: 'Club no encontrado' });
     res.json({ ok: true, club });
   } catch (err) {
-    console.error('❌ Error al actualizar club:', err.message);
+    console.error("❌ Error al actualizar club:");
     res.status(500).json({ error: 'Error al actualizar club' });
   }
 };
@@ -185,7 +180,6 @@ const postLoginClub = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    console.log('📩 Intento de login de club:', email);
 
     const club = await Club.findOne({ email });
     if (!club) {
@@ -218,7 +212,7 @@ const postLoginClub = async (req, res) => {
       email: club.email,
     });
   } catch (error) {
-    console.error('❌ Error en /login-club:', error);
+    console.error("❌ Error en /login-club:");
     res.status(500).json({ error: 'Error al iniciar sesión del club' });
   }
 };
@@ -274,7 +268,7 @@ const postClubReenviarVerificacion = async (req, res) => {
         'Te reenviamos el mail de verificación. Revisá tu bandeja de entrada o el correo no deseado.',
     });
   } catch (error) {
-    console.error('❌ Error en /club/reenviar-verificacion:', error);
+    console.error("❌ Error en /club/reenviar-verificacion:");
     res
       .status(500)
       .json({ error: 'Error al reenviar el mail de verificación.' });
@@ -315,7 +309,7 @@ const getVerificarClub = async (req, res) => {
 
     res.json({ ok: true, mensaje: 'Cuenta verificada correctamente.' });
   } catch (error) {
-    console.error('❌ Error en /verificar-club:', error);
+    console.error("❌ Error en /verificar-club:");
     res.status(500).json({ error: 'Error al verificar cuenta.' });
   }
 };

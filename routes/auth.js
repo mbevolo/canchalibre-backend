@@ -97,7 +97,7 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ Error en /auth/login:', error);
+    console.error("❌ Error en /auth/login:");
     return res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 });
@@ -140,7 +140,7 @@ router.post('/refresh', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ Error en /auth/refresh:', error);
+    console.error("❌ Error en /auth/refresh:");
     clearRefreshCookie(res);
     return res.status(500).json({ error: 'No se pudo renovar la sesión' });
   }

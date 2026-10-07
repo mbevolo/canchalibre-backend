@@ -17,7 +17,7 @@ router.get("/me", authClub, async (req, res) => {
     res.json(club);
 
   } catch (error) {
-    console.error("Error en GET /api/club/me:", error);
+    console.error("Error en GET /api/club/me:");
     res.status(500).json({ error: "Error obteniendo datos del club" });
   }
 });

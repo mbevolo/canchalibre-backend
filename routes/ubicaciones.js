@@ -11,7 +11,7 @@ router.get('/', (req, res) => {
         const ubicaciones = JSON.parse(rawData);
         res.json(ubicaciones);
     } catch (error) {
-        console.error('Error al leer ubicaciones:', error);
+        console.error("Error al leer ubicaciones:");
         res.status(500).json({ error: 'Error al leer las ubicaciones' });
     }
 });

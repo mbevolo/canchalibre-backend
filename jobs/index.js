@@ -8,11 +8,9 @@ function startJobs() {
         try {
           const result = await operation();
           if (result.modifiedCount)
-            console.log(
-              `${label}: ${result.modifiedCount} registros actualizados`,
-            );
+            console.log('Evento del servidor');
         } catch (error) {
-          console.error(`Error en ${label}:`, error.message);
+          console.error('Evento del servidor');
         }
       },
       { noOverlap: true },

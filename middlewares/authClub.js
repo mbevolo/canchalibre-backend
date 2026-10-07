@@ -29,7 +29,7 @@ module.exports = async function authClub(req, res, next) {
 
     next();
   } catch (err) {
-    console.error("Error verificando token club:", err.message);
+    console.error("Error verificando token club:");
     return res.status(401).json({ error: "Token inválido" });
   }
 };

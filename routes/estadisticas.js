@@ -88,7 +88,7 @@ router.get('/estadisticas-club', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Error en /estadisticas-club:', error);
+    console.error("❌ Error en /estadisticas-club:");
     res.status(500).json({ error: 'Error al obtener estadísticas del club' });
   }
 });

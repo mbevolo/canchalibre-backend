@@ -40,7 +40,7 @@ async function getTurnosGenerados(req, res) {
       }),
     );
   } catch (error) {
-    console.error('Error generando disponibilidad:', error);
+    console.error("Error generando disponibilidad:");
     return res.status(500).json({ error: 'Error al generar turnos' });
   }
 }

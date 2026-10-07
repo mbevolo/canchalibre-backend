@@ -74,14 +74,14 @@ const postRegistrar = async (req, res) => {
     try {
       await sendMail(email, 'Verificá tu email en CanchaLibre', html);
     } catch (e) {
-      console.error('❌ Error enviando email de verificación:', e);
+      console.error("❌ Error enviando email de verificación:");
     }
 
     return res.json({
       mensaje: 'Usuario registrado. Revisa tu email para verificar la cuenta.',
     });
   } catch (error) {
-    console.error('❌ Error en /registrar:', error);
+    console.error("❌ Error en /registrar:");
     res.status(500).json({ error: 'Error al registrar usuario' });
   }
 };
@@ -105,8 +105,6 @@ const postReenviarVerificacion = async (req, res) => {
     // Link correcto
     const verifyLink = `https://canchalibre.ar/verificar-email.html?token=${token}&tipo=usuario`;
 
-    console.log('[DEV] Link de verificación:', verifyLink);
-
     await sendMail(
       email,
       'Verificá tu email - CanchaLibre',
@@ -117,7 +115,7 @@ const postReenviarVerificacion = async (req, res) => {
 
     return res.json({ ok: true });
   } catch (e) {
-    console.error('POST /reenviar-verificacion', e);
+    console.error("POST /reenviar-verificacion");
     return res.status(500).json({ error: 'Error interno' });
   }
 };
@@ -153,7 +151,7 @@ const postRecuperar = async (req, res) => {
 
     res.json({ mensaje: 'Correo de recuperación enviado correctamente.' });
   } catch (error) {
-    console.error('❌ Error en /recuperar:', error);
+    console.error("❌ Error en /recuperar:");
     res.status(500).json({ error: 'Error al procesar la recuperación.' });
   }
 };
@@ -194,7 +192,7 @@ const postReset = async (req, res) => {
 
     res.json({ mensaje: 'Contraseña actualizada correctamente.' });
   } catch (error) {
-    console.error('❌ Error en /reset:', error);
+    console.error("❌ Error en /reset:");
     res.status(500).json({ error: 'Error al restablecer contraseña.' });
   }
 };
@@ -232,7 +230,7 @@ const postRecuperarClub = async (req, res) => {
       mensaje: 'Correo de recuperación enviado correctamente al club.',
     });
   } catch (error) {
-    console.error('❌ Error en /recuperar-club:', error);
+    console.error("❌ Error en /recuperar-club:");
     res
       .status(500)
       .json({ error: 'Error al procesar la recuperación del club.' });
@@ -274,7 +272,7 @@ const postResetClub = async (req, res) => {
 
     res.json({ mensaje: 'Contraseña del club actualizada correctamente.' });
   } catch (error) {
-    console.error('❌ Error en /reset-club:', error);
+    console.error("❌ Error en /reset-club:");
     res
       .status(500)
       .json({ error: 'Error al restablecer contraseña del club.' });
@@ -311,7 +309,7 @@ const getVerificarEmail = async (req, res) => {
 
     return res.redirect(redirectUrl);
   } catch (error) {
-    console.error('❌ Error en /verificar-email:', error);
+    console.error("❌ Error en /verificar-email:");
     res.status(500).send('Error interno al verificar email.');
   }
 };

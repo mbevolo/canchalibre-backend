@@ -98,3 +98,12 @@ Validación de la separación: unitarias (incluye creación sin efectos externos
 - API responde JSON para rutas inexistentes, JSON malformado y origen no autorizado; no muestra stack interno.
 
 Estado del plan: etapa 2 (separación del monolito) realizada; etapas 4/5 ampliadas con cambios concretos, no una auditoría de infraestructura ni un rediseño integral. Etapa 6 ampliada a 13 unitarias backend, 13 frontend, integración, dos recorridos Chromium y benchmark. Etapas externas, datos existentes y reintegros mantienen sus pendientes. Ver ARCHITECTURE.md para responsabilidades y comandos.
+
+## Cierre de logs y firma de webhooks
+
+- Los logs de ejecución contienen únicamente mensajes constantes: se retiraron enlaces de verificación, contactos, enlaces de checkout y objetos completos de errores/respuestas. Dos pruebas impiden reintroducir datos dinámicos y verifican errores de email con credenciales simuladas.
+- Ambos webhooks verifican HMAC-SHA256 y comparan la firma en tiempo constante antes de consultar pagos o acceder a eventos. El ID firmado de `data.id` es el que se consulta; IDs diferentes en cuerpo/query, firmas ausentes, inválidas o ambiguas se rechazan.
+- Configurar `MP_WEBHOOK_SECRET` con el secreto de la aplicación MP que genera las notificaciones. No es el access token. Para aplicaciones independientes de clubes, `MP_CLUB_WEBHOOK_SECRETS` admite un objeto JSON de email del club a secreto, mantenido exclusivamente en variables del servidor. Para destacados puede configurarse `MP_FEATURED_WEBHOOK_SECRET`; si no se define usa el secreto común. El secreto común solo corresponde a notificaciones de esa misma aplicación.
+- Sin secreto o con configuración inválida devuelve 503; no existe bypass por entorno. Sin firma válida devuelve 401. Los reintentos tardíos siguen sujetos a firma y a idempotencia, sin imponer una ventana temporal que descarte reenvíos legítimos.
+- Contrato legacy IPN sin firma no aceptado. Antes de desplegar, configurar Webhooks en cada aplicación correspondiente y validar recepción real en sandbox. Referencia oficial: https://www.mercadopago.com.ar/developers/en/docs/wallet-connect/notifications (plantilla de firma).
+- Pruebas locales de firma y recorrido de pagos aprobados, pendientes, duplicados y rollback usan secretos/pagos simulados. No sustituyen una prueba de Mercado Pago real. La credencial MongoDB expuesta sigue pendiente de revocación confirmada en Atlas.

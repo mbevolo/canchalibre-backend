@@ -38,19 +38,17 @@ async function startServer({ port = process.env.PORT || 3000 } = {}) {
 if (require.main === module) {
   startServer()
     .then((runtime) => {
-      console.log(
-        `Servidor iniciado en puerto ${runtime.server.address().port}`,
-      );
+      console.log('Evento del servidor');
       for (const signal of ['SIGTERM', 'SIGINT'])
         process.once(signal, () => {
           runtime.stop().catch((error) => {
-            console.error('No se pudo cerrar el servidor:', error.message);
+            console.error("No se pudo cerrar el servidor:");
             process.exitCode = 1;
           });
         });
     })
     .catch(async (error) => {
-      console.error('No se pudo iniciar el servidor:', error.message);
+      console.error("No se pudo iniciar el servidor:");
       await mongoose.disconnect();
       process.exitCode = 1;
     });

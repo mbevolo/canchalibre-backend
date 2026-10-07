@@ -10,7 +10,7 @@ const DestacadoOrder = require('../models/DestacadoOrder');
 
 const postApiMercadopagoWebhook = async (req, res) => {
   try {
-    const paymentId = req.query.id || req.body?.data?.id;
+    const paymentId = req.mercadoPagoPaymentId;
     if (!paymentId) return res.sendStatus(200);
 
     const turnoIdFromQuery = req.query.turno
@@ -61,14 +61,6 @@ const postApiMercadopagoWebhook = async (req, res) => {
 
     // Si todavía no tenemos clubData, no podemos consultar el pago (porque ahora es token del club)
     if (!clubData || !clubData.mercadoPagoAccessToken) {
-      console.log(
-        '⚠️ Webhook sin club token. paymentId:',
-        paymentId,
-        'club:',
-        clubEmailFromQuery,
-        'turno:',
-        turnoIdFromQuery,
-      );
       return res.sendStatus(200);
     }
 
@@ -94,12 +86,6 @@ const postApiMercadopagoWebhook = async (req, res) => {
     }
 
     if (!turno) {
-      console.log(
-        '⚠️ Webhook: no se encontró turno. paymentId:',
-        paymentId,
-        'external_reference:',
-        externalRef,
-      );
       return res.sendStatus(200);
     }
 
@@ -107,20 +93,9 @@ const postApiMercadopagoWebhook = async (req, res) => {
     if (status === 'approved') {
       await applyPayment(turno._id, clubData.email, String(paymentId), payment);
     } else if (status === 'rejected' || status === 'cancelled') {
-      console.log(
-        'ℹ️ Webhook: pago no aprobado:',
-        status,
-        'turno:',
-        String(turno._id),
-      );
       // acá podés decidir si liberás turno o lo dejás pendiente
     } else {
-      console.log(
-        'ℹ️ Webhook: status intermedio:',
-        status,
-        'turno:',
-        String(turno._id),
-      );
+
     }
 
     return res.sendStatus(200);
@@ -128,14 +103,14 @@ const postApiMercadopagoWebhook = async (req, res) => {
     if (error.code === 11000) return res.sendStatus(200);
     if (error.status)
       return res.status(error.status).json({ error: error.message });
-    console.error('❌ Error procesando webhook MP:', error);
+    console.error("❌ Error procesando webhook MP:");
     return res.sendStatus(500);
   }
 };
 
 const postApiMercadopagoDestacadoWebhook = async (req, res) => {
   try {
-    const paymentId = req.query.id || req.body?.data?.id;
+    const paymentId = req.mercadoPagoPaymentId;
     if (!paymentId) return res.sendStatus(200);
 
     // ✅ Idempotencia persistente en DB
@@ -188,7 +163,7 @@ const postApiMercadopagoDestacadoWebhook = async (req, res) => {
   } catch (error) {
     if (error.status)
       return res.status(error.status).json({ error: error.message });
-    console.error('❌ Error en webhook de destacado:', error);
+    console.error("❌ Error en webhook de destacado:");
     return res.sendStatus(500);
   }
 };

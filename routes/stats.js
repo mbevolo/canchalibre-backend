@@ -61,7 +61,7 @@ router.get('/overview', authClub, async (req, res) => {
       ocupacionPorCancha: canchas.filter(c => courtCounts.has(String(c._id))).map(c => ({ nombre: c.nombre, cantidad: courtCounts.get(String(c._id)) }))
     });
   } catch (error) {
-    console.error('Error overview:', error);
+    console.error("Error overview:");
     return res.status(500).json({ error: 'Error generando estadísticas' });
   }
 });

@@ -49,7 +49,7 @@ const postClubEmailDestacarPago = async (req, res) => {
 
     res.json({ pagoUrl: response.body.init_point });
   } catch (error) {
-    console.error('❌ Error generando link de pago de destaque:', error);
+    console.error("❌ Error generando link de pago de destaque:");
     res.status(500).json({ error: 'No se pudo generar el link de pago' });
   }
 };

@@ -35,7 +35,7 @@ const getClubes = async (req, res) => {
     });
     res.json(clubes);
   } catch (error) {
-    console.error('❌ Error en GET /clubes:', error);
+    console.error("❌ Error en GET /clubes:");
     res.status(500).json({ error: 'Error al obtener clubes' });
   }
 };
@@ -64,7 +64,7 @@ const getClubIdId = async (req, res) => {
 
     res.json(club);
   } catch (error) {
-    console.error('❌ Error en GET /club-id/:id:', error);
+    console.error("❌ Error en GET /club-id/:id:");
     res.status(500).json({ error: 'Error al obtener club por id' });
   }
 };

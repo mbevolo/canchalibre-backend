@@ -11,7 +11,7 @@ function errorHandler(error, req, res, next) {
       .json({ error: 'La solicitud supera el tamaño permitido' });
   if (error.type === 'entity.parse.failed')
     return res.status(400).json({ error: 'JSON inválido' });
-  console.error('Error inesperado en la API:', error.name);
+  console.error("Error inesperado en la API:");
   return res.status(500).json({ error: 'Error interno del servidor' });
 }
 module.exports = { notFound, errorHandler };

@@ -74,7 +74,7 @@ router.get('/reservas', authUser, async (req, res) => {
       };
     }));
   } catch (error) {
-    console.error('❌ Error en GET /api/me/reservas:', error);
+    console.error("❌ Error en GET /api/me/reservas:");
     return res.status(500).json({ error: 'Error al obtener tus reservas' });
   }
 });
@@ -116,7 +116,7 @@ router.post('/reservas/:id/resend-confirmation', authUser, async (req, res) => {
     await sendMail(user.email, 'Confirmá tu reserva en CanchaLibre', html);
     return res.json({ mensaje: 'Correo reenviado correctamente.' });
   } catch (error) {
-    console.error('❌ Error en resend-confirmation:', error);
+    console.error("❌ Error en resend-confirmation:");
     return res.status(500).json({ error: 'Error al reenviar el correo.' });
   }
 });
@@ -129,7 +129,7 @@ router.patch('/reservas/:id/cancel', authUser, async (req, res) => {
     if (!reserva) return res.status(404).json({ error: 'Reserva pendiente no encontrada' });
     return res.json({ mensaje: 'Reserva pendiente cancelada correctamente.' });
   } catch (error) {
-    console.error('❌ Error cancelando reserva:', error);
+    console.error("❌ Error cancelando reserva:");
     return res.status(500).json({ error: 'Error al cancelar la reserva.' });
   }
 });
@@ -168,7 +168,7 @@ router.post('/turnos/:id/payment-link', authUser, async (req, res) => {
     const response = await mercadopago.preferences.create(preference, { access_token: club.mercadoPagoAccessToken });
     return res.json({ pagoUrl: response?.body?.init_point || null });
   } catch (error) {
-    console.error('❌ Error generando link de pago:', error);
+    console.error("❌ Error generando link de pago:");
     return res.status(500).json({ error: 'Error generando link de pago' });
   }
 });
