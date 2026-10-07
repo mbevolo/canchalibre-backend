@@ -1,4 +1,6 @@
+const { resetPassword } = require('../services/passwordReset');
 const Usuario = require('../models/Usuario');
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { sendMail } = require('../utils/email');
@@ -52,7 +54,7 @@ const postRegistrar = async (req, res) => {
     await nuevoUsuario.save();
 
     // Enviar email con Brevo
-    const link = `https://canchalibre.ar/verificar-email.html?token=${token}&tipo=usuario`;
+    const link = `${process.env.FRONT_URL || 'https://canchalibre.ar'}/verificar-email.html?token=${token}&tipo=usuario`;
 
     const html = `
       <div style="font-family:Arial,Helvetica,sans-serif">
@@ -103,12 +105,12 @@ const postReenviarVerificacion = async (req, res) => {
     await user.save();
 
     // Link correcto
-    const verifyLink = `https://canchalibre.ar/verificar-email.html?token=${token}&tipo=usuario`;
+    const verifyLink = `${process.env.FRONT_URL || 'https://canchalibre.ar'}/verificar-email.html?token=${token}&tipo=usuario`;
 
     await sendMail(
       email,
       'Verificá tu email - CanchaLibre',
-      `<p>Hola ${user.nombre || ''},</p>
+      `<p>Hola ${escapeHtml(user.nombre)},</p>
        <p>Confirmá tu correo haciendo click aquí:</p>
        <p><a href="${verifyLink}">${verifyLink}</a></p>`,
     );
@@ -126,17 +128,14 @@ const postRecuperar = async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Falta el email.' });
 
     const usuario = await Usuario.findOne({ email });
-    if (!usuario)
-      return res
-        .status(404)
-        .json({ error: 'No existe un usuario con ese email.' });
+    if (!usuario) return res.json({ mensaje: 'Si la cuenta existe, recibirás un correo de recuperación.' });
 
     const token = crypto.randomBytes(32).toString('hex');
     usuario.resetToken = token;
     usuario.resetTokenExp = new Date(Date.now() + 3600000); // 1 hora
     await usuario.save();
 
-    const link = `https://canchalibre.ar/reset.html?token=${token}&tipo=usuario`;
+    const link = `${process.env.FRONT_URL || 'https://canchalibre.ar'}/reset.html?token=${token}&tipo=usuario`;
 
     await sendMail(
       usuario.email,
@@ -149,7 +148,7 @@ const postRecuperar = async (req, res) => {
   `,
     );
 
-    res.json({ mensaje: 'Correo de recuperación enviado correctamente.' });
+    res.json({ mensaje: 'Si la cuenta existe, recibirás un correo de recuperación.' });
   } catch (error) {
     console.error("❌ Error en /recuperar:");
     res.status(500).json({ error: 'Error al procesar la recuperación.' });
@@ -158,42 +157,12 @@ const postRecuperar = async (req, res) => {
 
 const postReset = async (req, res) => {
   try {
-    const { token, nuevaPassword } = req.body;
-    if (!token || !nuevaPassword)
-      return res.status(400).json({ error: 'Faltan datos.' });
-
-    const usuario = await Usuario.findOne({
-      resetToken: token,
-      resetTokenExp: { $gt: Date.now() },
-    });
-
-    if (!usuario)
-      return res.status(400).json({ error: 'Token inválido o expirado.' });
-
-    // Validar nueva contraseña (mínimo 6, número y letra)
-    if (
-      nuevaPassword.length < 6 ||
-      !/\d/.test(nuevaPassword) ||
-      !/[A-Za-z]/.test(nuevaPassword)
-    ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            'La nueva contraseña debe tener al menos 6 caracteres e incluir una letra y un número.',
-        });
-    }
-
-    const hash = await bcrypt.hash(nuevaPassword, 10);
-    usuario.password = hash;
-    usuario.resetToken = undefined;
-    usuario.resetTokenExp = undefined;
-    await usuario.save();
-
-    res.json({ mensaje: 'Contraseña actualizada correctamente.' });
+    await resetPassword(req.body.token, req.body.nuevaPassword, false);
+    return res.json({ mensaje: 'Contraseña actualizada correctamente.' });
   } catch (error) {
-    console.error("❌ Error en /reset:");
-    res.status(500).json({ error: 'Error al restablecer contraseña.' });
+    if (error.status) return res.status(error.status).json({ error: error.message });
+    console.error('Error al restablecer contraseña.');
+    return res.status(500).json({ error: 'Error al restablecer contraseña.' });
   }
 };
 
@@ -203,17 +172,14 @@ const postRecuperarClub = async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Falta el email.' });
 
     const club = await Club.findOne({ email });
-    if (!club)
-      return res
-        .status(404)
-        .json({ error: 'No existe un club con ese email.' });
+    if (!club) return res.json({ mensaje: 'Si la cuenta existe, recibirás un correo de recuperación.' });
 
     const token = crypto.randomBytes(32).toString('hex');
     club.resetToken = token;
     club.resetTokenExp = new Date(Date.now() + 3600000); // 1 hora
     await club.save();
 
-    const link = `https://canchalibre.ar/reset.html?token=${token}&tipo=club`;
+    const link = `${process.env.FRONT_URL || 'https://canchalibre.ar'}/reset.html?token=${token}&tipo=club`;
 
     await sendMail(
       club.email,
@@ -227,7 +193,7 @@ const postRecuperarClub = async (req, res) => {
     );
 
     res.json({
-      mensaje: 'Correo de recuperación enviado correctamente al club.',
+      mensaje: 'Si la cuenta existe, recibirás un correo de recuperación.',
     });
   } catch (error) {
     console.error("❌ Error en /recuperar-club:");
@@ -239,43 +205,12 @@ const postRecuperarClub = async (req, res) => {
 
 const postResetClub = async (req, res) => {
   try {
-    const { token, nuevaPassword } = req.body;
-    if (!token || !nuevaPassword)
-      return res.status(400).json({ error: 'Faltan datos.' });
-
-    const club = await Club.findOne({
-      resetToken: token,
-      resetTokenExp: { $gt: Date.now() },
-    });
-
-    if (!club)
-      return res.status(400).json({ error: 'Token inválido o expirado.' });
-
-    if (
-      nuevaPassword.length < 6 ||
-      !/\d/.test(nuevaPassword) ||
-      !/[A-Za-z]/.test(nuevaPassword)
-    ) {
-      return res
-        .status(400)
-        .json({
-          error:
-            'La nueva contraseña debe tener al menos 6 caracteres e incluir una letra y un número.',
-        });
-    }
-
-    const hash = await bcrypt.hash(nuevaPassword, 10);
-    club.passwordHash = hash;
-    club.resetToken = undefined;
-    club.resetTokenExp = undefined;
-    await club.save();
-
-    res.json({ mensaje: 'Contraseña del club actualizada correctamente.' });
+    await resetPassword(req.body.token, req.body.nuevaPassword, true);
+    return res.json({ mensaje: 'Contraseña actualizada correctamente.' });
   } catch (error) {
-    console.error("❌ Error en /reset-club:");
-    res
-      .status(500)
-      .json({ error: 'Error al restablecer contraseña del club.' });
+    if (error.status) return res.status(error.status).json({ error: error.message });
+    console.error('Error al restablecer contraseña.');
+    return res.status(500).json({ error: 'Error al restablecer contraseña.' });
   }
 };
 
@@ -288,24 +223,16 @@ const getVerificarEmail = async (req, res) => {
 
     const Modelo = tipo === 'club' ? Club : Usuario;
 
-    const entidad = await Modelo.findOne({
+    const entidad = await Modelo.findOneAndUpdate({
       tokenVerificacion: token,
       tokenVerificacionExpira: { $gt: new Date() },
-    });
-
-    if (!entidad) {
-      return res.status(400).send('Token inválido o vencido.');
-    }
-
-    entidad.emailVerificado = true;
-    entidad.tokenVerificacion = undefined;
-    entidad.tokenVerificacionExpira = undefined;
-    await entidad.save();
+    }, { $set: { emailVerificado: true }, $unset: { tokenVerificacion: 1, tokenVerificacionExpira: 1 } }, { new: true });
+    if (!entidad) return res.status(400).send('Token inválido o vencido.');
 
     const redirectUrl =
       tipo === 'club'
-        ? `https://canchalibre.ar/login-club.html?verified=1`
-        : `https://canchalibre.ar/login.html?verified=1`;
+        ? `${process.env.FRONT_URL || 'https://canchalibre.ar'}/login-club.html?verified=1`
+        : `${process.env.FRONT_URL || 'https://canchalibre.ar'}/login.html?verified=1`;
 
     return res.redirect(redirectUrl);
   } catch (error) {

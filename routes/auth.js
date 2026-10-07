@@ -24,7 +24,7 @@ function hashToken(token) {
 
 function issueAccessToken(usuario) {
   return jwt.sign(
-    { sub: String(usuario._id), role: 'user', type: 'access' },
+    { sub: String(usuario._id), role: 'user', type: 'access', authVersion: usuario.authVersion || 0 },
     process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET,
     {
       expiresIn: ACCESS_TTL,
@@ -58,6 +58,7 @@ async function createSession(usuario, req, res) {
 
   await UserSession.create({
     usuarioId: usuario._id,
+    authVersion: usuario.authVersion || 0,
     tokenHash: hashToken(refreshToken),
     expiresAt,
     userAgent: String(req.get('user-agent') || '').slice(0, 500),
@@ -121,7 +122,7 @@ router.post('/refresh', async (req, res) => {
     }
 
     const usuario = await Usuario.findById(session.usuarioId);
-    if (!usuario || usuario.activo === false || !usuario.emailVerificado) {
+    if (!usuario || usuario.activo === false || !usuario.emailVerificado || (session.authVersion || 0) !== (usuario.authVersion || 0)) {
       session.revokedAt = new Date();
       await session.save();
       clearRefreshCookie(res);
@@ -165,13 +166,16 @@ router.post('/logout', async (req, res) => {
   }
 });
 
-router.post('/logout-all', authUser, async (req, res) => {
-  await UserSession.updateMany(
-    { usuarioId: req.userId, revokedAt: null },
-    { $set: { revokedAt: new Date() } }
-  );
-  clearRefreshCookie(res);
-  return res.json({ ok: true });
+router.post('/logout-all', authUser, async (req, res, next) => {
+  try {
+    await require('../services/reservations').transaction(async session => {
+      await Usuario.updateOne({ _id: req.userId }, { $inc: { authVersion: 1 } }, { session });
+      await UserSession.updateMany({ usuarioId: req.userId, revokedAt: null },
+        { $set: { revokedAt: new Date() } }, { session });
+    });
+    clearRefreshCookie(res);
+    return res.json({ ok: true });
+  } catch (error) { next(error); }
 });
 
 router.get('/me', authUser, async (req, res) => {
@@ -191,7 +195,7 @@ router.get('/me', authUser, async (req, res) => {
   });
 });
 
-router.patch('/me', authUser, async (req, res) => {
+router.patch('/me', authUser, require('../validations/accounts').profileBody, async (req, res) => {
   const { nombre, apellido, telefono } = req.body || {};
 
   const usuario = await Usuario.findByIdAndUpdate(

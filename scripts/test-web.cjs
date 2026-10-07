@@ -56,6 +56,12 @@ const {chromium}=require(path.join(front, 'node_modules/playwright'));
     await page.waitForFunction(()=>!document.getElementById('superadmin-content').textContent.includes('Cargando'));
     assert.ok(!await page.locator('#superadmin-content').textContent().then(t=>t.includes('Error:')));
   }
+  const artifacts = path.join(front, '.test-artifacts'); fs.mkdirSync(artifacts, { recursive: true });
+  await page.screenshot({path:path.join(artifacts,'panel-admin-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.screenshot({path:path.join(artifacts,'panel-admin-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:1280,height:900});
   await page.click('#cerrar-sesion');await page.waitForURL(origin+'/login-superadmin.html');assert.equal(await page.evaluate(()=>localStorage.getItem('superadminToken')),null);assert.deepEqual(errors,[]);
   await page.goto(origin+'/login-club.html');await page.fill('#email',club.email);await page.fill('#password','Web-test-123!');await page.click('#form-login-club button[type="submit"]');await page.waitForURL(origin+'/panel-club.html');
   await page.click('#canchas-tab');await page.waitForFunction(()=>document.getElementById('canchas-list').textContent.includes('Cancha Web'));
@@ -102,6 +108,13 @@ const {chromium}=require(path.join(front, 'node_modules/playwright'));
   assert.ok(await page.evaluate(()=>Chart.getChart('chart-reservas-dia')));
   await page.selectOption('#select-mes',{index:1});await page.waitForFunction(()=>document.getElementById('kpi-ocupacion').textContent!=='—');
   await page.goto(origin+'/panel-club.html');await page.waitForSelector('#canchas-tab');
+  await page.click('#reservas-tab');await page.waitForSelector('#reservas-list tr');
+  await page.waitForFunction(()=>document.getElementById('reservasTab').classList.contains('show') && getComputedStyle(document.getElementById('reservasTab')).opacity==='1');
+  assert.equal(await page.locator('#clubTabs > li > .active').count(),1);
+  await page.screenshot({path:path.join(artifacts,'panel-club-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.screenshot({path:path.join(artifacts,'panel-club-mobile.png'),fullPage:true});
   await page.click('#cerrar-sesion');await page.waitForURL(origin+'/login-club.html');assert.equal(await page.evaluate(()=>localStorage.getItem('clubToken')),null);assert.deepEqual(errors,[]);
   console.log('E2E real OK: login, cookie HttpOnly, refresh entre páginas, editar perfil, hold, OTP, confirmación y logout; SuperAdmin: login, secciones, edición de club, texto seguro, configuración y logout; Club: login, ABM de canchas, reserva manual desde agenda, teléfono, enlace de pago, preparación de WhatsApp sin enviar, cancelación, QR, estadísticas y logout; recursos JS/CSS locales, MongoDB aislado y correo simulado, sin producción.');
  }finally{if(browser)await browser.close();if(api)await new Promise(r=>api.close(r));if(web)await new Promise(r=>web.close(r));await mongoose.disconnect();await mongo.stop();}

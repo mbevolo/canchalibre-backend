@@ -17,8 +17,8 @@ module.exports = async function authUser(req, res, next) {
       return res.status(401).json({ error: 'Token de usuario inválido' });
     }
 
-    const usuario = await Usuario.findById(decoded.sub).select('_id activo emailVerificado').lean();
-    if (!usuario || usuario.activo === false || !usuario.emailVerificado) return res.status(401).json({ error: 'Cuenta no disponible' });
+    const usuario = await Usuario.findById(decoded.sub).select('_id activo emailVerificado authVersion').lean();
+    if (!usuario || usuario.activo === false || !usuario.emailVerificado || (decoded.authVersion || 0) !== (usuario.authVersion || 0)) return res.status(401).json({ error: 'Cuenta no disponible' });
     req.userId = String(decoded.sub);
     req.userToken = decoded;
     next();

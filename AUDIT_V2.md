@@ -117,3 +117,15 @@ Estado del plan: etapa 2 (separación del monolito) realizada; etapas 4/5 amplia
 - SuperAdmin: cambios rápidos de sección descartan respuestas tardías, incluidos errores de solicitudes anteriores.
 - MongoDB: usuario `turnolibre_user` compartido con producción confirmado por el titular. Rotación en Atlas y actualización coordinada de Render postergadas explícitamente; la credencial expuesta sigue vigente. No se modificaron esos servicios.
 - No se completó un rediseño integral ni se validaron proveedores/infraestructura real: continúan pendientes sandbox de MP, Brevo y auditoría de datos de desarrollo con acceso autorizado.
+
+## Recuperación de cuentas y presentación de paneles
+
+- Se detectó y corrigió falta de validación de tokens en reset/recuperación/verificación. Las rutas validan token hexadecimal, email, texto y contraseña antes de consultar MongoDB; contraseña nueva limitada a 72 bytes para evitar truncamiento de bcrypt.
+- Reset consume token mediante actualización condicional, incrementa authVersion y actualiza passwordHash eliminando password legacy. Usuarios: cambio y revocación de sesiones dentro de una transacción. Clubes: actualización atómica e invalidación de JWT mediante versión.
+- Access JWT y refresh sessions verifican authVersion; default 0 conserva cuentas/sesiones anteriores hasta que se cambie la contraseña. Logout-all también incrementa la versión y revoca refresh dentro de una transacción.
+- Verificación de email usa actualización condicional para consumir token una vez. Recuperación no distingue públicamente email inexistente en status/mensaje (no se promete ocultar diferencias de tiempo). Rutas de cuentas tienen límite de solicitudes; login SuperAdmin ahora también tiene límite.
+- Enlaces de cuentas respetan FRONT_URL. Pruebas cubren inyección de selectores, reset concurrente, rollback ante fallo de revocación, rechazo de contraseña/JWT/cookie anteriores y login nuevo, registro con email normalizado y verificación de un solo uso.
+- Se retiró un log adicional del registro de club que imprimía password en consola del navegador; una prueba controla scripts externos e inline para impedir logs dinámicos.
+- Paneles comparten estilos, enlace para saltar al contenido, foco visible, tablas con desplazamiento interno y adaptación a 390 px. Modales de canchas tienen etiquetas accesibles. Capturas de SuperAdmin/club/usuario revisadas localmente con recursos y datos de pruebas.
+- Recuperación permite seleccionar explícitamente usuario/club; se elimina elección basada en que el email contenga la palabra club. Login/reset preservan espacios de contraseña y los envíos bloquean duplicados durante la solicitud.
+- Configuración de desarrollo documentada en .env.example, sin credenciales. No se configuró hosting de pruebas, servicios externos ni producción.

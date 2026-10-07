@@ -320,6 +320,67 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     await Turno.deleteOne({ _id: orphan._id });
     assert.equal((await request('/auth/logout', { method: 'POST', cookie: newCookie })).status, 200);
     assert.equal((await request('/auth/refresh', { method: 'POST', cookie: newCookie })).status, 401);
+    // Recovery rejects selector objects and consumes a token exactly once.
+    for (const path of ['/reset', '/reset-club']) {
+      assert.equal((await request(path, { method: 'POST', body: { token: { $ne: null }, nuevaPassword: 'New-pass-123!' } })).status, 400);
+    }
+    for (const path of ['/recuperar', '/recuperar-club', '/reenviar-verificacion', '/club/reenviar-verificacion'])
+      assert.equal((await request(path, { method: 'POST', body: { email: { $ne: null } } })).status, 400);
+    const recovered = await Usuario.create({ email: 'recover@example.test', nombre: 'Recover', passwordHash, password: 'legacy-hash', emailVerificado: true });
+    const beforeReset = await request('/auth/login', { method: 'POST', body: { email: recovered.email, password } });
+    const beforeToken = (await beforeReset.json()).accessToken;
+    const beforeCookie = beforeReset.headers.get('set-cookie').split(';')[0];
+    assert.equal((await request('/recuperar', { method: 'POST', body: { email: recovered.email } })).status, 200);
+    const resetUser = await Usuario.findById(recovered._id);
+    const recoveryBody = { token: resetUser.resetToken, nuevaPassword: 'Changed-pass-123!' };
+    assert.ok(sent.at(-1)[2].includes(process.env.FRONT_URL + '/reset.html'));
+    const UserSession = require('../models/UserSession');
+    const originalRevoke = UserSession.updateMany;
+    UserSession.updateMany = async () => { throw new Error('Injected session failure'); };
+    try { assert.equal((await request('/reset', { method: 'POST', body: recoveryBody })).status, 500); }
+    finally { UserSession.updateMany = originalRevoke; }
+    assert.equal((await Usuario.findById(recovered._id)).resetToken, recoveryBody.token, 'Reset rolls back if session revocation fails');
+    const simultaneous = await Promise.all([request('/reset', { method: 'POST', body: recoveryBody }), request('/reset', { method: 'POST', body: recoveryBody })]);
+    assert.deepEqual(simultaneous.map(r => r.status).sort(), [200, 400]);
+    assert.equal((await request('/auth/me', { token: beforeToken })).status, 401);
+    assert.equal((await request('/auth/refresh', { method: 'POST', cookie: beforeCookie })).status, 401);
+    assert.equal((await request('/auth/login', { method: 'POST', body: { email: recovered.email, password } })).status, 401);
+    const afterReset = await request('/auth/login', { method: 'POST', body: { email: recovered.email, password: recoveryBody.nuevaPassword } });
+    assert.equal(afterReset.status, 200);
+    assert.equal((await request('/auth/me', { token: (await afterReset.json()).accessToken })).status, 200);
+    const changedUser = await Usuario.findById(recovered._id);
+    assert.equal(changedUser.password, undefined); assert.equal(changedUser.authVersion, 1);
+    assert.equal((await request('/reset', { method: 'POST', body: recoveryBody })).status, 400);
+    const logoutAllToken = (await (await request('/auth/login', { method: 'POST', body: { email: recovered.email, password: recoveryBody.nuevaPassword } })).json()).accessToken;
+    assert.equal((await request('/auth/logout-all', { token: logoutAllToken, method: 'POST' })).status, 200);
+    assert.equal((await request('/auth/me', { token: logoutAllToken })).status, 401);
+    assert.equal((await request('/auth/me', { token: logoutAllToken, method: 'PATCH', body: { nombre: {} } })).status, 401);
+    for (const endpoint of ['/recuperar', '/recuperar-club']) {
+      const missing = await request(endpoint, { method: 'POST', body: { email: 'missing@example.test' } });
+      assert.equal(missing.status, 200); assert.match((await missing.json()).mensaje, /Si la cuenta existe/);
+    }
+
+
+    await Club.updateOne({ _id: clubFixture._id }, { $set: { emailVerificado: true } });
+    assert.equal((await request('/recuperar-club', { method: 'POST', body: { email: (await Club.findById(clubFixture._id)).email } })).status, 200);
+    const resetClub = await Club.findById(clubFixture._id);
+    const clubResetBody = { token: resetClub.resetToken, nuevaPassword: 'New-club-pass-123!' };
+    const clubResets = await Promise.all([request('/reset-club', { method: 'POST', body: clubResetBody }), request('/reset-club', { method: 'POST', body: clubResetBody })]);
+    assert.deepEqual(clubResets.map(r => r.status).sort(), [200, 400]);
+    assert.equal((await request('/api/club/me', { token: clubToken })).status, 401);
+    const newClubLogin = await request('/login-club', { method: 'POST', body: { email: resetClub.email, password: clubResetBody.nuevaPassword } });
+    assert.equal(newClubLogin.status, 200);
+    assert.equal((await request('/api/club/me', { token: (await newClubLogin.json()).token })).status, 200);
+
+    assert.equal((await request('/registrar', { method: 'POST', body: { nombre: 'New', apellido: 'User', email: ' NEW@example.test ', password, telefono: '1234567890' } })).status, 200);
+    const registered = await Usuario.findOne({ email: 'new@example.test' });
+    assert.ok(registered); assert.equal(registered.emailVerificado, false);
+    assert.ok(sent.at(-1)[2].includes(process.env.FRONT_URL + '/verificar-email.html'));
+    assert.equal((await request('/auth/login', { method: 'POST', body: { email: registered.email, password } })).status, 403);
+    const verifyPath = '/verificar-email?tipo=usuario&token=' + registered.tokenVerificacion;
+    assert.equal((await request(verifyPath)).status, 302);
+    assert.equal((await request(verifyPath)).status, 400);
+    assert.equal((await request('/auth/login', { method: 'POST', body: { email: registered.email, password } })).status, 200);
   } finally {
     express.application.listen = originalListen;
     cron.schedule = originalSchedule;

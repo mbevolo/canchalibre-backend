@@ -25,7 +25,7 @@ router.post('/register', (req, res) => {
 });
 
 // Login superadmin
-router.post('/login', async (req, res) => {
+router.post('/login', require('../middlewares/rateLimits').sensitiveLimiter, async (req, res) => {
   try {
     const { password } = req.body;
     if (typeof req.body.email !== 'string' || typeof password !== 'string' || !password) return res.status(400).json({ ok: false, msg: 'Credenciales inválidas' });

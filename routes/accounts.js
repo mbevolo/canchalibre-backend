@@ -1,19 +1,21 @@
 const controller = require('../controllers/accounts');
 
+const validation = require('../validations/accounts');
+const { accountLimiter } = require('../middlewares/rateLimits');
 const router = require('express').Router();
 
-router.post('/registrar', controller.postRegistrar);
+router.post('/registrar', accountLimiter, validation.registerUser, controller.postRegistrar);
 
-router.post('/reenviar-verificacion', controller.postReenviarVerificacion);
+router.post('/reenviar-verificacion', accountLimiter, validation.emailBody, controller.postReenviarVerificacion);
 
-router.post('/recuperar', controller.postRecuperar);
+router.post('/recuperar', accountLimiter, validation.emailBody, controller.postRecuperar);
 
-router.post('/reset', controller.postReset);
+router.post('/reset', accountLimiter, validation.resetBody, controller.postReset);
 
-router.post('/recuperar-club', controller.postRecuperarClub);
+router.post('/recuperar-club', accountLimiter, validation.emailBody, controller.postRecuperarClub);
 
-router.post('/reset-club', controller.postResetClub);
+router.post('/reset-club', accountLimiter, validation.resetBody, controller.postResetClub);
 
-router.get('/verificar-email', controller.getVerificarEmail);
+router.get('/verificar-email', accountLimiter, validation.verifyQuery, controller.getVerificarEmail);
 
 module.exports = router;

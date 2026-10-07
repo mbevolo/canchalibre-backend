@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const usuarioSchema = new mongoose.Schema({
+  authVersion: { type: Number, default: 0 },
   nombre: String,
   apellido: String,
   telefono: String,

@@ -203,7 +203,7 @@ const postLoginClub = async (req, res) => {
     }
 
     // ✅ Generar token JWT (ya lo tenés requerido arriba)
-    const token = jwt.sign({ clubId: club._id }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ clubId: club._id, authVersion: club.authVersion || 0 }, process.env.JWT_SECRET, {
       expiresIn: '7d',
     });
 
@@ -286,29 +286,9 @@ const getVerificarClub = async (req, res) => {
       return res.status(400).json({ error: 'Faltan parámetros.' });
     }
 
-    const club = await Club.findOne({ email });
-
-    if (!club) {
-      return res.status(404).json({ error: 'Club no encontrado.' });
-    }
-
-    // 🔍 Validar token
-    if (
-      !club.tokenVerificacion ||
-      club.tokenVerificacion !== token ||
-      !club.tokenVerificacionExpira ||
-      club.tokenVerificacionExpira < new Date()
-    ) {
-      return res.status(400).json({ error: 'Token inválido o expirado.' });
-    }
-
-    // ✨ Marcar como verificado
-    club.emailVerificado = true;
-    club.tokenVerificacion = null;
-    club.tokenVerificacionExpira = null;
-    club.emailVerificadoEn = new Date();
-
-    await club.save();
+    const club = await Club.findOneAndUpdate({ email, tokenVerificacion: token, tokenVerificacionExpira: { $gt: new Date() } },
+      { $set: { emailVerificado: true }, $unset: { tokenVerificacion: 1, tokenVerificacionExpira: 1 } }, { new: true });
+    if (!club) return res.status(400).json({ error: 'Token inválido o expirado.' });
 
     res.json({ ok: true, mensaje: 'Cuenta verificada correctamente.' });
   } catch (error) {

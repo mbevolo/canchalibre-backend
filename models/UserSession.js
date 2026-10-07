@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const userSessionSchema = new mongoose.Schema({
+  authVersion: { type: Number, default: 0 },
   usuarioId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Usuario',

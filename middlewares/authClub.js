@@ -15,10 +15,10 @@ module.exports = async function authClub(req, res, next) {
     }
 
     const club = await Club.findById(decoded.clubId)
-      .select("_id email activo")
+      .select("_id email activo authVersion")
       .lean();
 
-    if (!club) return res.status(401).json({ error: "Club no encontrado" });
+    if (!club || (decoded.authVersion || 0) !== (club.authVersion || 0)) return res.status(401).json({ error: "Club no encontrado" });
     if (club.activo === false) {
       return res.status(403).json({ error: "Club inactivo" });
     }
