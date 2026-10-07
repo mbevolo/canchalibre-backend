@@ -1,166 +1,68 @@
-const express = require("express");
+const express = require('express');
+const Turno = require('../models/Turno');
+const Cancha = require('../models/Cancha');
+const authClub = require('../middlewares/authClub');
 const router = express.Router();
-const Turno = require("../models/Turno");
-const Club = require("../models/Club");
-const Cancha = require("../models/Cancha");
-const authClub = require("../middlewares/authClub");
-
-// =========================================
-// 📊 Estadísticas del club (para estadisticas.html)
-// =========================================
-router.get("/overview", authClub, async (req, res) => {
-  try {
-    const clubId = req.clubId;
-    const club = await Club.findById(clubId).lean();
-    if (!club) return res.status(404).json({ error: "Club no encontrado" });
-
-    const clubEmail = club.email;
-
-    // ================================
-// 📅 Rango del mes solicitado (por query) o mes actual
-// ================================
-const hoy = new Date();
-
-// Si vienen parámetros de la URL, los usamos. Ejemplo: ?anio=2025&mes=11
-const anio = Number(req.query.anio) || hoy.getFullYear();
-const mes = Number(req.query.mes) || hoy.getMonth() + 1;
-
-// Calcular primer y último día del mes solicitado
-const inicioMes = new Date(anio, mes - 1, 1);
-const finMes = new Date(anio, mes, 0); // último día del mes
-
-    // 🔧 Convertidor de string (YYYY-MM-DD → Date)
-    const parseFecha = str => {
-      if (!str || typeof str !== "string") return null;
-      const [y, m, d] = str.split("-").map(Number);
-      return new Date(y, m - 1, d);
-    };
-
-    // Buscar turnos del club
-    const turnos = await Turno.find({ club: clubEmail }).lean();
-
-    // Filtrar por fechas del mes actual
-    const turnosMes = turnos.filter(t => {
-      const fecha = parseFecha(t.fecha);
-      return fecha && fecha >= inicioMes && fecha <= finMes;
-    });
-
-    // ================================
-    // KPIs
-    // ================================
-// 🔹 Cantidad total de reservas reales (pagadas o no)
-const totalReservas = turnosMes.filter(t => t.usuarioReservado).length;
-
-// 🔹 Calcular cantidad total de turnos posibles del mes según las canchas del club
-const canchasClub = await Cancha.find({ clubEmail: clubEmail }).lean();
-let totalTurnosPosibles = 0;
-
-for (const cancha of canchasClub) {
-  const diasDisponibles = cancha.diasDisponibles?.length || 7; // si no tiene, asumimos 7 días
-  const horaDesde = parseInt(cancha.horaDesde.split(':')[0]);
-  const horaHasta = parseInt(cancha.horaHasta.split(':')[0]);
-  const duracion = cancha.duracionTurno || 60;
-
-  // Cuántos turnos tiene por día esa cancha
-  const turnosPorDia = Math.floor(((horaHasta - horaDesde) * 60) / duracion);
-
-  // Total mensual aproximado (proporcional a los días del mes)
-  totalTurnosPosibles += turnosPorDia * diasDisponibles * (finMes.getDate() / 7);
+const weekdays = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+const normalize = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function minutes(value) {
+  if (value === '24:00') return 1440;
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value))) return NaN;
+  const [hour, minute] = value.split(':').map(Number); return hour * 60 + minute;
 }
-
-// 🔹 Calcular ocupación promedio realista
-const ocupacionPromedio = totalTurnosPosibles > 0
-  ? (totalReservas / totalTurnosPosibles) * 100
-  : 0;
-
-// 🔹 Calcular ingresos solo con turnos pagados
-const turnosPagados = turnosMes.filter(t => t.pagado);
-const ingresosMP = turnosPagados.reduce((acc, t) => acc + (t.precio || 0), 0);
-
-// 🧩 Log de control (opcional)
-console.log(`💡 Ocupación calculada: ${totalReservas}/${Math.round(totalTurnosPosibles)} turnos posibles → ${ocupacionPromedio.toFixed(2)}%`);
-
-    // ================================
-    // Reservas por día (1 al fin de mes)
-    // ================================
+router.get('/overview', authClub, async (req, res) => {
+  try {
+    const now = new Date();
+    const anio = req.query.anio === undefined ? now.getFullYear() : Number(req.query.anio);
+    const mes = req.query.mes === undefined ? now.getMonth() + 1 : Number(req.query.mes);
+    if (!Number.isInteger(anio) || anio < 2000 || anio > 2100 || !Number.isInteger(mes) || mes < 1 || mes > 12) {
+      return res.status(400).json({ error: 'Año o mes inválido' });
+    }
+    const prefix = `${anio}-${String(mes).padStart(2, '0')}`;
+    const days = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+    const [turnos, canchas] = await Promise.all([
+      Turno.find({ club: req.clubEmail, fecha: { $gte: prefix + '-01', $lte: prefix + '-' + days } })
+        .select('fecha hora deporte canchaId precio pagado usuarioReservado').lean(),
+      Cancha.find({ clubEmail: req.clubEmail }).select('nombre diasDisponibles horaDesde horaHasta duracionTurno').lean()
+    ]);
+    const booked = turnos.filter(t => t.usuarioReservado);
+    const paid = booked.filter(t => t.pagado);
     const reservasPorDia = [];
-    const diasEnMes = finMes.getDate();
-
-    for (let dia = 1; dia <= diasEnMes; dia++) {
-      const fechaStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
-      const count = turnosMes.filter(t => t.fecha === fechaStr && t.usuarioReservado).length;
-      reservasPorDia.push({ dia: fechaStr, cantidad: count });
-    }
-
-    // ================================
-    // Ingresos por deporte (solo pagados)
-    // ================================
     const ingresosPorDeporte = {};
-    turnosPagados.forEach(t => {
-      const dep = t.deporte || "Otro";
-      ingresosPorDeporte[dep] = (ingresosPorDeporte[dep] || 0) + (t.precio || 0);
-    });
-
-    // ================================
-    // Horas pico (todas las reservas)
-    // ================================
-    const horasPico = [];
-    for (let h = 0; h < 24; h++) {
-      const hora = String(h).padStart(2, "0") + ":00";
-      const cantidad = turnosMes.filter(t => t.hora === hora && t.usuarioReservado).length;
-      horasPico.push({ hora, cantidad });
+    const hourCounts = new Map();
+    const courtCounts = new Map();
+    const dayCounts = new Map();
+    for (const t of booked) {
+      dayCounts.set(t.fecha, (dayCounts.get(t.fecha) || 0) + 1);
+      const hour = String(t.hora || '').slice(0, 2) + ':00';
+      hourCounts.set(hour, (hourCounts.get(hour) || 0) + 1);
+      courtCounts.set(String(t.canchaId), (courtCounts.get(String(t.canchaId)) || 0) + 1);
     }
-
-    // ================================
-    // Ocupación por cancha (todas las reservas)
-    // ================================
-    const ocupacionPorCancha = {};
-    turnosMes.forEach(t => {
-      if (t.canchaId && t.usuarioReservado) {
-        ocupacionPorCancha[t.canchaId] = (ocupacionPorCancha[t.canchaId] || 0) + 1;
+    for (const t of paid) ingresosPorDeporte[t.deporte || 'Otro'] = (ingresosPorDeporte[t.deporte || 'Otro'] || 0) + Number(t.precio || 0);
+    let capacity = 0;
+    for (let day = 1; day <= days; day++) {
+      const date = prefix + '-' + String(day).padStart(2, '0');
+      reservasPorDia.push({ dia: date, cantidad: dayCounts.get(date) || 0 });
+      const weekday = weekdays[new Date(Date.UTC(anio, mes - 1, day)).getUTCDay()];
+      for (const court of canchas) {
+        if (!court.diasDisponibles?.map(normalize).includes(weekday)) continue;
+        const start = minutes(court.horaDesde), end = minutes(court.horaHasta);
+        const duration = Number(court.duracionTurno || 60);
+        if (Number.isFinite(start) && Number.isFinite(end) && duration > 0 && end > start) capacity += Math.floor((end - start) / duration);
       }
-    });
-
-    const canchaIds = Object.keys(ocupacionPorCancha);
-    const canchas = await Cancha.find({ _id: { $in: canchaIds } }).lean();
-
-    const ocupacionLista = canchaIds.map(id => {
-      const cancha = canchas.find(c => c._id.toString() === id);
-      return {
-        nombre: cancha ? cancha.nombre : "Cancha desconocida",
-        cantidad: ocupacionPorCancha[id]
-      };
-    });
-
-    // ================================
-    // Logs de control (opcional)
-    // ================================
-    console.log("=== Fechas de turnos detectadas ===");
-    turnosMes.forEach(t => console.log("➡️", t.fecha));
-    console.log("===================================");
-    console.log("=== Conteo de reservasPorDia ===");
-    reservasPorDia.forEach(r => {
-      if (r.cantidad > 0) console.log(r.dia, "=>", r.cantidad);
-    });
-    console.log("===============================");
-
-    // ================================
-    // Respuesta final
-    // ================================
-    res.json({
-      totalReservas,
-      ingresosMP,
-      ocupacionPromedio,
+    }
+    return res.json({
+      totalReservas: booked.length,
+      ingresosMP: paid.reduce((sum, t) => sum + Number(t.precio || 0), 0),
+      ocupacionPromedio: capacity ? booked.length / capacity * 100 : 0,
       reservasPorDia,
       ingresosPorDeporte,
-      horasPico,
-      ocupacionPorCancha: ocupacionLista
+      horasPico: Array.from({ length: 24 }, (_, h) => { const hora = String(h).padStart(2, '0') + ':00'; return { hora, cantidad: hourCounts.get(hora) || 0 }; }),
+      ocupacionPorCancha: canchas.filter(c => courtCounts.has(String(c._id))).map(c => ({ nombre: c.nombre, cantidad: courtCounts.get(String(c._id)) }))
     });
-
-  } catch (err) {
-    console.error("Error overview:", err);
-    res.status(500).json({ error: "Error generando overview" });
+  } catch (error) {
+    console.error('Error overview:', error);
+    return res.status(500).json({ error: 'Error generando estadísticas' });
   }
 });
-
 module.exports = router;

@@ -22,4 +22,6 @@ const usuarioSchema = new mongoose.Schema({
   resetTokenExp: { type: Date, default: null },
 });
 
+usuarioSchema.set('toJSON', { transform: require('../utils/publicJson') });
+
 module.exports = mongoose.models.Usuario || mongoose.model('Usuario', usuarioSchema);

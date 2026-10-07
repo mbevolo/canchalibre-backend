@@ -23,7 +23,7 @@ test('login, refresh, reservation ownership, confirmation and logout', {
   const originalPaymentLookup = mercadopago.payment.findById;
   let paymentResponse;
   mercadopago.payment.findById = async (id, options) => {
-    assert.equal(options.access_token, 'TEST-private-club-token');
+    assert.equal(options.access_token, id.startsWith('featured') ? 'TEST-isolated' : 'TEST-private-club-token');
     return { body: paymentResponse };
   };
   const originalSchedule = cron.schedule;
@@ -71,10 +71,67 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     const clubBooking = { canchaId: String(cancha._id), deporte: 'padel', club: clubFixture.email, fecha: '2030-01-10', hora: '12:00', precio: 1000, usuarioReservado: 'Test', emailReservado: 'test@example.com', metodoPago: 'efectivo' };
     const concurrentBookings = await Promise.all([request('/reservar-turno', { method: 'POST', token: clubToken, body: clubBooking }), request('/reservar-turno', { method: 'POST', token: clubToken, body: clubBooking })]);
     assert.deepEqual(concurrentBookings.map(r => r.status).sort(), [200, 409]);
+    const Superadmin = require('../models/Superadmin');
+    await Superadmin.create({ email: 'admin@example.com', nombre: 'Admin Test', passwordHash });
+    const adminLogin = await request('/superadmin/login', { method: 'POST', body: { email: 'admin@example.com', password } });
+    assert.equal(adminLogin.status, 200);
+    const adminToken = (await adminLogin.json()).token;
+    for (const resource of ['clubes', 'usuarios', 'reservas', 'pagos', 'destacados', 'configuraciones']) {
+      assert.equal((await request('/superadmin/' + resource)).status, 401);
+      const result = await request('/superadmin/' + resource, { token: adminToken });
+      assert.equal(result.status, 200);
+      const data = await result.json();
+      assert.ok(!JSON.stringify(data).includes(passwordHash));
+      assert.ok(!JSON.stringify(data).includes('TEST-private-club-token'));
+    }
+    assert.equal((await request('/canchas', { method: 'POST', token: clubToken, body: { clubEmail: 'another@example.com' } })).status, 403);
+    assert.equal((await request('/superadmin/login', { method: 'POST', body: { email: { $ne: null }, password } })).status, 400);
+    assert.equal((await request('/superadmin/configuraciones', { method: 'PUT', token: adminToken, body: { precioDestacado: -1 } })).status, 400);
+    assert.equal((await request('/superadmin/configuraciones', { method: 'PUT', token: adminToken, body: { precioDestacado: 2500, diasDestacado: 7 } })).status, 200);
+    assert.equal((await request('/club/' + clubFixture.email + '/destacar-pago', { method: 'POST' })).status, 401);
+    const originalPreference = mercadopago.preferences.create;
+    let featuredReference;
+    try {
+      mercadopago.preferences.create = async (body, options) => {
+        assert.equal(options.access_token, 'TEST-isolated');
+        assert.equal(body.items[0].unit_price, 2500);
+        featuredReference = body.external_reference;
+        return { body: { init_point: 'https://sandbox.example.test/payment' } };
+      };
+      assert.equal((await request('/club/' + clubFixture.email + '/destacar-pago', { method: 'POST', token: clubToken })).status, 200);
+    } finally { mercadopago.preferences.create = originalPreference; }
+    // Price and duration are fixed at checkout even if configuration changes later.
+    await request('/superadmin/configuraciones', { method: 'PUT', token: adminToken, body: { precioDestacado: 5000, diasDestacado: 30 } });
+    const featuredWebhook = '/api/mercadopago/destacado-webhook';
+    paymentResponse = { status: 'pending', external_reference: featuredReference, transaction_amount: 2500, currency_id: 'ARS' };
+    assert.equal((await request(featuredWebhook, { method: 'POST', body: { data: { id: 'featured-payment' } } })).status, 200);
+    assert.equal(await require('../models/PaymentEvent').countDocuments({ paymentId: 'featured-payment' }), 0);
+    paymentResponse.status = 'approved';
+    paymentResponse.transaction_amount = 1;
+    assert.equal((await request(featuredWebhook, { method: 'POST', body: { data: { id: 'featured-payment' } } })).status, 400);
+    paymentResponse.transaction_amount = 2500;
+    assert.equal((await request(featuredWebhook, { method: 'POST', body: { data: { id: 'featured-payment' } } })).status, 200);
+    const featuredClub = await Club.findById(clubFixture._id);
+    assert.equal(featuredClub.destacado, true);
+    assert.ok(Math.abs(featuredClub.destacadoHasta.getTime() - Date.now() - 7 * 86400000) < 5000);
+    assert.equal((await request(featuredWebhook, { method: 'POST', body: { data: { id: 'featured-payment' } } })).status, 200);
+    assert.equal((await Club.findById(clubFixture._id)).destacadoHasta.getTime(), featuredClub.destacadoHasta.getTime());
+    const overview = await request('/api/stats/overview?anio=2030&mes=1', { token: clubToken });
+    assert.equal(overview.status, 200);
+    const stats = await overview.json();
+    assert.equal(stats.totalReservas, 1);
+    assert.equal(stats.reservasPorDia.length, 31);
+    assert.equal(stats.reservasPorDia[9].dia, '2030-01-10');
+    assert.equal(stats.reservasPorDia[9].cantidad, 1);
+    assert.equal(stats.ocupacionPromedio, 1 / 70 * 100);
+    assert.equal((await request('/api/stats/overview?anio=2030&mes=13', { token: clubToken })).status, 400);
     const login = await request('/auth/login', { method: 'POST', body: { email: user.email, password } });
     assert.equal(login.status, 200);
     const { accessToken } = await login.json();
     const cookie = login.headers.get('set-cookie').split(';')[0];
+    await request('/superadmin/usuarios/' + user._id + '/suspender', { method: 'PATCH', token: adminToken });
+    assert.equal((await request('/auth/me', { token: accessToken })).status, 401);
+    await request('/superadmin/usuarios/' + user._id + '/suspender', { method: 'PATCH', token: adminToken });
     assert.match(login.headers.get('set-cookie'), /HttpOnly/);
     assert.match(login.headers.get('set-cookie'), /Path=\/auth/);
     assert.equal((await request('/auth/me', { token: accessToken })).status, 200);
@@ -117,13 +174,21 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.ok(slots.every(slot => slot.emailReservado === null));
     assert.ok(!JSON.stringify(slots).includes(user.email));
     const webhook = '/api/mercadopago/webhook?club=club%40canchalibre.local&turno=' + turno._id;
-    paymentResponse = { status: 'pending', external_reference: String(turno._id), transaction_amount: turno.precio, currency_id: 'ARS' };
+    paymentResponse = { status: 'pending', external_reference: require('../utils/paymentWrites').paymentReference(turno), transaction_amount: turno.precio, currency_id: 'ARS' };
     assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 200);
     assert.equal((await Turno.findById(turno._id)).pagado, false);
     paymentResponse = { ...paymentResponse, status: 'approved', transaction_amount: 1 };
     assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 400);
     assert.equal((await Turno.findById(turno._id)).pagado, false);
     paymentResponse.transaction_amount = turno.precio;
+    const PaymentEvent = require('../models/PaymentEvent');
+    const originalPaymentWrite = PaymentEvent.create;
+    try {
+      PaymentEvent.create = () => { throw new Error('Injected payment event failure'); };
+      assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 500);
+    } finally { PaymentEvent.create = originalPaymentWrite; }
+    assert.equal((await Turno.findById(turno._id)).pagado, false);
+    assert.equal(await PaymentEvent.countDocuments({ paymentId: 'test-payment' }), 0);
     assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 200);
     assert.equal((await Turno.findById(turno._id)).pagado, true);
     assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 200);
@@ -134,6 +199,30 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal((await request('/api/me/turnos/' + turno._id + '/cancel', { method: 'PATCH', token: renewed.accessToken })).status, 200);
     assert.equal((await Turno.findById(turno._id)).usuarioId, null);
     assert.equal((await Reserva.findById(reservaId)).estado, 'CANCELLED');
+    const rollback = await Reserva.create({ canchaId: cancha._id, usuarioId: user._id, emailContacto: user.email, fecha: '2030-01-10', hora: '15:00', codigoOTP: '654321', expiresAt: new Date(Date.now() + 600000) });
+    const originalWrite = Turno.findOneAndUpdate;
+    try {
+      Turno.findOneAndUpdate = () => { throw new Error('Injected storage failure'); };
+      assert.equal((await request('/reservas/confirmar/' + rollback._id + '/' + rollback.codigoOTP)).status, 500);
+    } finally { Turno.findOneAndUpdate = originalWrite; }
+    assert.equal((await Reserva.findById(rollback._id)).estado, 'PENDING');
+    assert.equal(await Turno.countDocuments({ canchaId: String(cancha._id), fecha: rollback.fecha, hora: rollback.hora }), 0);
+    assert.equal((await request('/reservas/confirmar/' + rollback._id + '/' + rollback.codigoOTP)).status, 302);
+    const rollbackTurno = await Turno.findOne({ canchaId: String(cancha._id), fecha: rollback.fecha, hora: rollback.hora });
+    const originalCancelWrite = Reserva.updateMany;
+    try {
+      Reserva.updateMany = () => { throw new Error('Injected cancellation failure'); };
+      assert.equal((await request('/api/me/turnos/' + rollbackTurno._id + '/cancel', { method: 'PATCH', token: renewed.accessToken })).status, 500);
+    } finally { Reserva.updateMany = originalCancelWrite; }
+    assert.equal(String((await Turno.findById(rollbackTurno._id)).usuarioId), String(user._id));
+    assert.equal((await Reserva.findById(rollback._id)).estado, 'CONFIRMED');
+    assert.equal((await request('/api/me/turnos/' + rollbackTurno._id + '/cancel', { method: 'PATCH', token: renewed.accessToken })).status, 200);
+    paymentResponse = { status: 'approved', external_reference: require('../utils/paymentWrites').paymentReference(rollbackTurno), transaction_amount: rollbackTurno.precio, currency_id: 'ARS' };
+    const rebooking = await Reserva.create({ canchaId: cancha._id, usuarioId: user._id, emailContacto: user.email, fecha: rollback.fecha, hora: rollback.hora, codigoOTP: '456789', expiresAt: new Date(Date.now() + 600000) });
+    assert.equal((await request('/reservas/confirmar/' + rebooking._id + '/' + rebooking.codigoOTP)).status, 302);
+    const lateWebhook = '/api/mercadopago/webhook?club=club%40canchalibre.local&turno=' + rollbackTurno._id;
+    assert.equal((await request(lateWebhook, { method: 'POST', body: { data: { id: 'late-payment' } } })).status, 400);
+    assert.equal((await Turno.findById(rollbackTurno._id)).pagado, false);
     const conflicts = await Reserva.create([1, 2].map(n => ({ canchaId: cancha._id, usuarioId: user._id, emailContacto: user.email, fecha: '2030-01-10', hora: '14:00', codigoOTP: String(100000 + n), expiresAt: new Date(Date.now() + 600000) })));
     const confirmed = await Promise.all(conflicts.map(r => request('/reservas/confirmar/' + r._id + '/' + r.codigoOTP)));
     assert.deepEqual(confirmed.map(r => r.status).sort(), [302, 409]);

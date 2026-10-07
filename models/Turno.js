@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const turnoSchema = new mongoose.Schema({
+  bookingId: String,
   deporte: String,
   fecha: String,
   club: String,

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const Usuario = require('../models/Usuario');
 
-module.exports = function authUser(req, res, next) {
+module.exports = async function authUser(req, res, next) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : null;
 
@@ -16,6 +17,8 @@ module.exports = function authUser(req, res, next) {
       return res.status(401).json({ error: 'Token de usuario inválido' });
     }
 
+    const usuario = await Usuario.findById(decoded.sub).select('_id activo emailVerificado').lean();
+    if (!usuario || usuario.activo === false || !usuario.emailVerificado) return res.status(401).json({ error: 'Cuenta no disponible' });
     req.userId = String(decoded.sub);
     req.userToken = decoded;
     next();

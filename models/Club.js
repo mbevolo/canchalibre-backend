@@ -25,4 +25,6 @@ const clubSchema = new mongoose.Schema({
   
 });
 
+clubSchema.set('toJSON', { transform: require('../utils/publicJson') });
+
 module.exports = mongoose.models.Club || mongoose.model('Club', clubSchema);

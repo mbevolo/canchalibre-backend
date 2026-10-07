@@ -1,3 +1,4 @@
+const { paymentReference } = require('../utils/paymentWrites');
 const express = require('express');
 const crypto = require('crypto');
 const mercadopago = require('../utils/mercadopago');
@@ -8,6 +9,7 @@ const Club = require('../models/Club');
 const Cancha = require('../models/Cancha');
 const authUser = require('../middlewares/authUser');
 const { sendMail } = require('../utils/email');
+const { cancelTurno } = require('../utils/reservationWrites');
 
 const router = express.Router();
 router.param('id', (req, res, next, id) => {
@@ -121,14 +123,10 @@ router.post('/reservas/:id/resend-confirmation', authUser, async (req, res) => {
 
 router.patch('/reservas/:id/cancel', authUser, async (req, res) => {
   try {
-    const reserva = await Reserva.findOne({
-      _id: req.params.id,
-      usuarioId: req.userId,
-      estado: 'PENDING'
-    });
+    const reserva = await Reserva.findOneAndUpdate({
+      _id: req.params.id, usuarioId: req.userId, estado: 'PENDING'
+    }, { $set: { estado: 'CANCELLED' } }, { new: true });
     if (!reserva) return res.status(404).json({ error: 'Reserva pendiente no encontrada' });
-    reserva.estado = 'CANCELLED';
-    await reserva.save();
     return res.json({ mensaje: 'Reserva pendiente cancelada correctamente.' });
   } catch (error) {
     console.error('❌ Error cancelando reserva:', error);
@@ -138,20 +136,10 @@ router.patch('/reservas/:id/cancel', authUser, async (req, res) => {
 
 router.patch('/turnos/:id/cancel', authUser, async (req, res) => {
   try {
-    const turno = await Turno.findOne({ _id: req.params.id, usuarioId: req.userId });
-    if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
-    if (turno.pagado) return res.status(409).json({ error: 'Contactá al club para cancelar una reserva pagada y gestionar el reintegro' });
-
-    const cancelled = await Turno.updateOne(
-      { _id: turno._id, usuarioId: req.userId, pagado: false },
-      { $set: { usuarioReservado: null, emailReservado: null, usuarioId: null, pagado: false } }
-    );
-    if (!cancelled.modifiedCount) return res.status(409).json({ error: 'La reserva cambió; volvé a consultarla' });
-    await Reserva.updateMany({ canchaId: turno.canchaId, fecha: turno.fecha, hora: turno.hora, usuarioId: req.userId, estado: 'CONFIRMED' }, { $set: { estado: 'CANCELLED' } });
+    await cancelTurno(req.params.id, { usuarioId: req.userId });
     return res.json({ mensaje: 'Turno cancelado correctamente.' });
   } catch (error) {
-    console.error('❌ Error cancelando turno:', error);
-    return res.status(500).json({ error: 'Error al cancelar el turno.' });
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Error al cancelar el turno.' });
   }
 });
 
@@ -174,7 +162,7 @@ router.post('/turnos/:id/payment-link', authUser, async (req, res) => {
         unit_price: Number(turno.precio || 0)
       }],
       notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook?club=' + encodeURIComponent(club.email) + '&turno=' + turno._id,
-      external_reference: String(turno._id)
+      external_reference: paymentReference(turno)
     };
 
     const response = await mercadopago.preferences.create(preference, { access_token: club.mercadoPagoAccessToken });

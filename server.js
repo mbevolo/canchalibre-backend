@@ -1,3 +1,7 @@
+const DestacadoOrder = require('./models/DestacadoOrder');
+const { transaction, failure } = require('./utils/reservationWrites');
+const { randomUUID } = require('node:crypto');
+const { paymentReference, applyPayment } = require('./utils/paymentWrites');
 require('dotenv').config();
 console.log("DEBUG FRONT_URL:", process.env.FRONT_URL);
 console.log("DEBUG APP_BASE_URL:", process.env.APP_BASE_URL);
@@ -29,6 +33,7 @@ const userRoutes = require('./routes/user');
 const statsRoutes = require("./routes/stats");
 const Reserva = require('./models/Reserva');
 const { validBookingSlot } = require('./utils/bookingSlot');
+const { confirmReservation, cancelTurno } = require('./utils/reservationWrites');
 
 
 const app = express();
@@ -287,29 +292,13 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
       console.error('⚠️ No se pudo calcular precio al confirmar:', e);
     }
 
-    const claimed = await Reserva.findOneAndUpdate({
-      _id: reserva._id, estado: 'PENDING', codigoOTP: code,
-      expiresAt: { $gt: new Date() }
-    }, { $set: { estado: 'CONFIRMED' } }, { new: true });
-    if (!claimed) return res.status(409).send('Esta reserva ya fue procesada.');
-
-    let turno;
-    try {
-      turno = await Turno.findOneAndUpdate({
-        canchaId: String(reserva.canchaId), fecha: reserva.fecha, hora: reserva.hora,
-        $or: [{ usuarioReservado: null }, { usuarioReservado: '' }]
-      }, { $set: {
-        deporte: cancha.deporte, club: cancha.clubEmail,
-        fecha: reserva.fecha, hora: reserva.hora, canchaId: String(reserva.canchaId),
-        precio: precioCalculado, usuarioReservado: emailReservadoFinal,
-        emailReservado: emailReservadoFinal, usuarioId: usuario?._id || null,
-        pagado: false, metodoPago: reserva.metodoPago || 'efectivo'
-      } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
-    } catch (error) {
-      await Reserva.updateOne({ _id: reserva._id, estado: 'CONFIRMED' }, { $set: { estado: 'CANCELLED' } });
-      if (error.code === 11000) return res.status(409).send('El turno ya está reservado.');
-      throw error;
-    }
+    const turno = await confirmReservation(reserva, code, {
+      deporte: cancha.deporte, club: cancha.clubEmail,
+      fecha: reserva.fecha, hora: reserva.hora, canchaId: String(reserva.canchaId),
+      precio: precioCalculado, usuarioReservado: emailReservadoFinal,
+      emailReservado: emailReservadoFinal, usuarioId: usuario?._id || null,
+      pagado: false, metodoPago: reserva.metodoPago || 'efectivo'
+    });
     console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
 
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
@@ -354,7 +343,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
         ],
 
         // ✅ IMPORTANTE: que sea el TURNO (así el webhook lo encuentra y marca pagado)
-        external_reference: String(turno._id),
+        external_reference: paymentReference(turno),
 
         back_urls: {
           success: `${process.env.FRONT_URL}/mp-success.html?turno=${turno._id}`,
@@ -400,7 +389,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     return res.redirect(`${process.env.FRONT_URL}/reserva-confirmada.html?id=${reserva._id}`);
 
   } catch (error) {
-    if (error.code === 11000) return res.status(409).send('El turno ya está reservado.');
+    if (error.status) return res.status(error.status).send(error.message);
     console.error('❌ Error en confirmación de reserva:', error);
     return res.status(500).send('Error confirmando la reserva');
   }
@@ -725,7 +714,7 @@ app.post(
       }, { $set: {
         deporte: cancha.deporte, club: cancha.clubEmail, fecha, hora, canchaId,
         usuarioReservado, emailReservado, usuarioId: usuario?._id || null,
-        precio: precioCalculado, pagado: false, metodoPago
+        precio: precioCalculado, pagado: false, metodoPago, bookingId: randomUUID(), pagoId: null, pagoMetodo: null, fechaPago: null
       } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
 
 if (metodoPago === 'online') {
@@ -743,8 +732,8 @@ if (metodoPago === 'online') {
       currency_id: 'ARS',
       unit_price: precioCalculado
     }],
-notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
-    external_reference: turno._id.toString()
+notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook?club=' + encodeURIComponent(clubData.email) + '&turno=' + turno._id,
+    external_reference: paymentReference(turno)
   };
 
   const response = await mercadopago.preferences.create(preference, { access_token: clubData.mercadoPagoAccessToken });
@@ -825,7 +814,7 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
 
     // Si todavía no encontramos turno, intentamos con external_reference
     if (!turno && externalRef) {
-      try { turno = await Turno.findById(String(externalRef)); } catch (_) {}
+      try { turno = await Turno.findById(String(externalRef).split(':')[0]); } catch (_) {}
     }
 
     // Fallback: buscar por pagoId
@@ -840,25 +829,7 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
 
     // ✅ Marcar pagado si approved
     if (status === 'approved') {
-      if (String(externalRef) !== String(turno._id) || turno.club !== clubData.email ||
-          payment.currency_id !== 'ARS' || Number(payment.transaction_amount) !== Number(turno.precio)) {
-        return res.status(400).json({ error: 'El pago no corresponde a esta reserva' });
-      }
-      if (!turno.pagado) {
-        turno.pagado = true;
-        turno.fechaPago = new Date();
-        turno.pagoId = paymentId;
-        turno.pagoMetodo =
-          payment.payment_method?.type ||
-          payment.payment_type_id ||
-          payment.payment_method_id ||
-          'mercadopago';
-
-        await turno.save();
-        console.log('✅ Webhook: turno marcado como PAGADO:', String(turno._id), 'club:', clubData.email);
-      } else {
-        console.log('ℹ️ Webhook: turno ya estaba pagado:', String(turno._id));
-      }
+      await applyPayment(turno._id, clubData.email, String(paymentId), payment);
     } else if (status === 'rejected' || status === 'cancelled') {
       console.log('ℹ️ Webhook: pago no aprobado:', status, 'turno:', String(turno._id));
       // acá podés decidir si liberás turno o lo dejás pendiente
@@ -866,12 +837,10 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
       console.log('ℹ️ Webhook: status intermedio:', status, 'turno:', String(turno._id));
     }
 
-    if (status === 'approved') {
-      await PaymentEvent.updateOne({ paymentId }, { $setOnInsert: { paymentId } }, { upsert: true });
-    }
     return res.sendStatus(200);
   } catch (error) {
     if (error.code === 11000) return res.sendStatus(200);
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error('❌ Error procesando webhook MP:', error);
     return res.sendStatus(500);
   }
@@ -1191,6 +1160,7 @@ app.post('/canchas', authClub, async (req, res) => {
     nocturnoDesde, precioNocturno
   } = req.body;
 
+  if (clubEmail !== req.clubEmail) return res.status(403).json({ error: 'La cancha debe pertenecer al club autenticado' });
   // ✅ Validaciones obligatorias
   if (!nombre || !deporte || !precio || !horaDesde || !horaHasta || !clubEmail) {
     return res.status(400).json({ error: 'Faltan campos obligatorios para crear la cancha.' });
@@ -1327,21 +1297,13 @@ app.put('/turnos/:id', authClub, async (req, res) => {
 });
 
 app.patch('/turnos/:id/cancelar', authClub, async (req, res) => {
-    try {
-        const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
-        if (!turno) return res.status(404).json({ error: 'Turno no encontrado o no pertenece al club' });
-
-        await Turno.updateOne({ _id: turno._id }, {
-            usuarioReservado: null,
-            emailReservado: null,
-            pagado: false
-        });
-        res.json({ mensaje: 'Reserva cancelada' });
-    } catch (error) {
-        res.status(500).json({ error: 'Error al cancelar reserva' });
-    }
+  try {
+    await cancelTurno(req.params.id, { club: req.clubEmail });
+    return res.json({ mensaje: 'Reserva cancelada' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.status ? error.message : 'Error al cancelar reserva' });
+  }
 });
-
 
 app.get('/turnos-generados', (req, res, next) => req.headers.authorization ? authClub(req, res, next) : next(), async (req, res) => {
   try {
@@ -1905,9 +1867,10 @@ app.put('/usuario/:email', async (req, res) => {
 */
 
 // Endpoint para generar el link de pago para destacar club
-app.post('/club/:email/destacar-pago', async (req, res) => {
+app.post('/club/:email/destacar-pago', authClub, async (req, res) => {
     try {
         const clubEmail = req.params.email;
+        if (clubEmail !== req.clubEmail) return res.status(403).json({ error: 'No autorizado' });
         const club = await Club.findOne({ email: clubEmail });
         if (!club) return res.status(404).json({ error: 'Club no encontrado' });
 
@@ -1918,9 +1881,7 @@ app.post('/club/:email/destacar-pago', async (req, res) => {
         const precioDestacado = config.precioDestacado;
         const diasDestacado = config.diasDestacado;
 
-        mercadopago.configure({
-            access_token: process.env.MP_ACCESS_TOKEN // tu token de vendedor
-        });
+        const order = await DestacadoOrder.create({ clubId: club._id, precio: precioDestacado, dias: diasDestacado });
 
         const preference = {
             items: [{
@@ -1930,7 +1891,7 @@ app.post('/club/:email/destacar-pago', async (req, res) => {
                 unit_price: precioDestacado
             }],
             notification_url: 'https://api.canchalibre.ar/api/mercadopago/destacado-webhook',
-            external_reference: clubEmail,
+            external_reference: 'destacado:' + order._id,
             back_urls: {
                 success: 'https://api.canchalibre.ar/panel-club.html',
                 failure: 'https://api.canchalibre.ar/panel-club.html'
@@ -1938,7 +1899,7 @@ app.post('/club/:email/destacar-pago', async (req, res) => {
             auto_return: 'approved'
         };
 
-        const response = await mercadopago.preferences.create(preference);
+        const response = await mercadopago.preferences.create(preference, { access_token: process.env.MP_ACCESS_TOKEN });
 
         res.json({ pagoUrl: response.body.init_point });
 
@@ -1960,7 +1921,6 @@ app.post('/api/mercadopago/destacado-webhook', async (req, res) => {
     const yaExiste = await PaymentEvent.findOne({ paymentId });
     if (yaExiste) return res.sendStatus(200);
 
-    await PaymentEvent.create({ paymentId });
 
     // Traer el pago desde MP
     const resp = await mercadopago.payment.findById(paymentId, { access_token: process.env.MP_ACCESS_TOKEN });
@@ -1971,26 +1931,29 @@ app.post('/api/mercadopago/destacado-webhook', async (req, res) => {
     if (!clubEmail) return res.sendStatus(200);
 
     if (status === 'approved') {
-      // Calculamos fecha de vencimiento (30 días)
-      const dias = 30;
-      const fechaVencimiento = new Date();
-      fechaVencimiento.setDate(fechaVencimiento.getDate() + dias);
-
-      // Actualizamos el club
-      await Club.findOneAndUpdate(
-        { email: clubEmail },
-        {
-          destacado: true,
-          destacadoHasta: fechaVencimiento,
-          idUltimaTransaccion: paymentId
-        }
-      );
-
-      console.log(`✅ Club ${clubEmail} destacado hasta el ${fechaVencimiento.toLocaleDateString('es-AR')}`);
+      await transaction(async session => {
+        if (await PaymentEvent.findOne({ paymentId }).session(session)) return;
+        const orderId = String(clubEmail).startsWith('destacado:') ? String(clubEmail).slice(10) : null;
+        if (!mongoose.isValidObjectId(orderId)) throw failure(400, 'Referencia de destaque inválida');
+        const order = await DestacadoOrder.findById(orderId).session(session);
+        if (!order || pago.currency_id !== 'ARS' || Number(pago.transaction_amount) !== order.precio) throw failure(400, 'El pago no corresponde al destaque');
+        if (order.paymentId && order.paymentId !== String(paymentId)) throw failure(409, 'El destaque ya tiene otro pago');
+        const club = await Club.findById(order.clubId).session(session);
+        if (!club) throw failure(404, 'Club no encontrado');
+        const from = Math.max(Date.now(), club.destacadoHasta?.getTime() || 0);
+        club.destacado = true;
+        club.destacadoHasta = new Date(from + order.dias * 86400000);
+        club.idUltimaTransaccion = String(paymentId);
+        await club.save({ session });
+        order.paymentId = String(paymentId);
+        await order.save({ session });
+        await PaymentEvent.create([{ paymentId: String(paymentId) }], { session });
+      });
     }
 
     return res.sendStatus(200);
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error('❌ Error en webhook de destacado:', error);
     return res.sendStatus(500);
   }

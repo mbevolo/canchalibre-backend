@@ -1,11 +1,11 @@
 // Base descartable: nunca utiliza MONGO_URI ni credenciales del usuario.
 process.env.MONGOMS_VERSION ||= '7.0.14';
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 (async () => {
-  const mongo = await MongoMemoryServer.create({
-    instance: { dbName: 'canchalibre_test', args: ['--nounixsocket'] }
+  const mongo = await MongoMemoryReplSet.create({
+    replSet: { count: 1, dbName: 'canchalibre_test', storageEngine: 'wiredTiger' }, instanceOpts: [{ args: ['--nounixsocket'] }]
   });
   try {
     const child = spawn(process.execPath, ['--test', 'tests/reservation.integration.test.js'], {

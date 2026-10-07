@@ -10,6 +10,7 @@ const superadminAuth = require('../middlewares/superadminAuth');
 const Turno = require('../models/Turno');
 const router = express.Router();
 const Config = require('../models/config');
+const { cancelTurno } = require('../utils/reservationWrites');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('Falta JWT_SECRET en .env');
 
@@ -23,7 +24,9 @@ router.post('/register', (req, res) => {
 // Login superadmin
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { password } = req.body;
+    if (typeof req.body.email !== 'string' || typeof password !== 'string' || !password) return res.status(400).json({ ok: false, msg: 'Credenciales inválidas' });
+    const email = req.body.email.trim().toLowerCase();
     const superadmin = await Superadmin.findOne({ email });
     if (!superadmin) return res.status(400).json({ ok: false, msg: 'Usuario o contraseña incorrectos' });
 
@@ -126,6 +129,10 @@ router.put('/configuraciones', superadminAuth, async (req, res) => {
     let config = await Config.findOne();
     if (!config) config = await Config.create({});
     const { precioDestacado, diasDestacado } = req.body;
+    if ((precioDestacado !== undefined && (typeof precioDestacado !== 'number' || !Number.isFinite(precioDestacado) || precioDestacado <= 0)) ||
+        (diasDestacado !== undefined && (!Number.isInteger(diasDestacado) || diasDestacado < 1 || diasDestacado > 365))) {
+      return res.status(400).json({ ok: false, msg: 'Precio y duración de destaque inválidos' });
+    }
     if (precioDestacado !== undefined) config.precioDestacado = precioDestacado;
     if (diasDestacado !== undefined) config.diasDestacado = diasDestacado;
     await config.save();
@@ -231,15 +238,10 @@ router.put('/reservas/:id', superadminAuth, async (req, res) => {
 // Cancelar reserva (libera turno)
 router.patch('/reservas/:id/cancelar', superadminAuth, async (req, res) => {
   try {
-    const turno = await Turno.findById(req.params.id);
-    if (!turno) return res.status(404).json({ ok: false, msg: 'Reserva no encontrada' });
-    turno.usuarioReservado = null;
-    turno.emailReservado = null;
-    turno.pagado = false;
-    await turno.save();
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false, msg: err.message });
+    await cancelTurno(req.params.id, {});
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(error.status || 500).json({ ok: false, msg: error.status ? error.message : 'Error al cancelar reserva' });
   }
 });
 

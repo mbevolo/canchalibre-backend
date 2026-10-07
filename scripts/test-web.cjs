@@ -1,10 +1,10 @@
 const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert/strict');
-const {MongoMemoryServer}=require('mongodb-memory-server');
+const {MongoMemoryReplSet}=require('mongodb-memory-server');
 const back=path.resolve(__dirname, '..');
 const front=process.env.FRONTEND_TEST_DIR || path.resolve(back, '../canchalibre-frontend');
 const {chromium}=require(path.join(front, 'node_modules/playwright'));
 (async()=>{
- const mongo=await MongoMemoryServer.create({binary:{version:'7.0.14'},instance:{dbName:'canchalibre_test',args:['--nounixsocket']}});
+ const mongo=await MongoMemoryReplSet.create({binary:{version:'7.0.14'},replSet:{count:1,dbName:'canchalibre_test',storageEngine:'wiredTiger'},instanceOpts:[{args:['--nounixsocket']}]});
  let api,browser,web;const mongoose=require(back+'/node_modules/mongoose');
  try{
   let apiBase;
