@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const Club = require('../models/Club');
 const Cancha = require('../models/Cancha');
+const Superadmin = require('../models/Superadmin');
 
 function isTestDeployment(env, databaseName) {
   return env.APP_BASE_URL === 'https://canchalibre-backend-v2-test.onrender.com'
@@ -21,6 +22,10 @@ const courts = [
 ];
 async function seedV2Test({ env = process.env, connection = require('mongoose').connection } = {}) {
   if (!isTestDeployment(env, connection.name)) return false;
+  await Superadmin.updateOne({ email: 'superadmin-v2@fixtures.canchalibre.invalid' }, { $setOnInsert: {
+    nombre: 'Administrador V2',
+    passwordHash: '$2b$12$LCkJs9MpcWAQZ2.YW0KeruemVp8cTUwpNnbo42HVmLYJisIkQtide',
+  } }, { upsert: true, runValidators: true });
   // Contraseña aleatoria descartada: los clubes ficticios no tienen credenciales públicas.
   const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
   for (const club of clubs) {
