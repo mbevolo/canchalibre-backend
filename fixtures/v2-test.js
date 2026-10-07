@@ -13,6 +13,7 @@ const clubs = [
   { email: 'villa-nueva@fixtures.canchalibre.invalid', nombre: 'Prueba V2 · Villa Nueva Club', localidad: 'Villa Nueva', latitud: -32.4325, longitud: -63.2475 },
   { email: 'padel-tenis@fixtures.canchalibre.invalid', nombre: 'Prueba V2 · Pádel y Tenis', localidad: 'Villa María', latitud: -32.3980, longitud: -63.2580 },
 ];
+clubs.push({ email: 'panel-club@fixtures.canchalibre.invalid', nombre: 'Prueba V2 · Club Panel', localidad: 'Villa María', latitud: -32.413, longitud: -63.25, passwordHash: '$2b$10$nJGqkM6lyp3W.rNq9fFBK..M5yW1oM2ASSpNjRMcgYVGChK.CxD5a', emailVerificado: true });
 const courts = [
   ['Fútbol 5', 'futbol', 18000, 60],
   ['Pádel', 'padel', 12000, 90],
@@ -24,8 +25,8 @@ async function seedV2Test({ env = process.env, connection = require('mongoose').
   const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
   for (const club of clubs) {
     await Club.updateOne({ email: club.email }, { $setOnInsert: {
-      ...club, provincia: 'Córdoba', telefono: '0000000000', passwordHash,
-      emailVerificado: false, activo: true,
+      provincia: 'Córdoba', telefono: '0000000000', passwordHash,
+      emailVerificado: false, activo: true, ...club,
     } }, { upsert: true, runValidators: true });
     for (const [nombre, deporte, precio, duracionTurno] of courts) {
       await Cancha.updateOne({ clubEmail: club.email, nombre }, { $setOnInsert: {
