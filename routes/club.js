@@ -8,7 +8,7 @@ const authClub = require("../middlewares/authClub");
 // Devuelve los datos del club autenticado usando SOLO el token
 router.get("/me", authClub, async (req, res) => {
   try {
-    const club = await Club.findById(req.clubId).lean();
+    const club = await Club.findById(req.clubId).select('-passwordHash -resetToken -resetTokenExp -tokenVerificacion -tokenVerificacionExpira').lean();
 
     if (!club) {
       return res.status(404).json({ error: "Club no encontrado" });

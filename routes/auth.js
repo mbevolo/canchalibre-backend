@@ -14,7 +14,8 @@ const REFRESH_DAYS = 30;
 function getCookie(req, name) {
   const header = req.headers.cookie || '';
   const item = header.split(';').map(v => v.trim()).find(v => v.startsWith(name + '='));
-  return item ? decodeURIComponent(item.slice(name.length + 1)) : null;
+  if (!item) return null;
+  try { return decodeURIComponent(item.slice(name.length + 1)); } catch (_) { return null; }
 }
 
 function hashToken(token) {
@@ -106,11 +107,11 @@ router.post('/refresh', async (req, res) => {
     const token = getCookie(req, 'canchalibre_refresh');
     if (!token) return res.status(401).json({ error: 'Sesión no disponible' });
 
-    const session = await UserSession.findOne({
+    const session = await UserSession.findOneAndUpdate({
       tokenHash: hashToken(token),
       revokedAt: null,
       expiresAt: { $gt: new Date() }
-    });
+    }, { $set: { revokedAt: new Date(), lastUsedAt: new Date() } }, { new: true });
 
     if (!session) {
       clearRefreshCookie(res);
@@ -118,16 +119,12 @@ router.post('/refresh', async (req, res) => {
     }
 
     const usuario = await Usuario.findById(session.usuarioId);
-    if (!usuario || usuario.activo === false) {
+    if (!usuario || usuario.activo === false || !usuario.emailVerificado) {
       session.revokedAt = new Date();
       await session.save();
       clearRefreshCookie(res);
       return res.status(401).json({ error: 'Cuenta no disponible' });
     }
-
-    session.revokedAt = new Date();
-    session.lastUsedAt = new Date();
-    await session.save();
 
     const accessToken = await createSession(usuario, req, res);
 

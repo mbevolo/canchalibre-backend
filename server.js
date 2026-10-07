@@ -7,7 +7,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const mercadopago = require('mercadopago');
+const mercadopago = require('./utils/mercadopago');
 const cron = require('node-cron');
 const Config = require('./models/config');
 const superadminRoutes = require('./routes/superadmin');
@@ -28,11 +28,14 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user'); 
 const statsRoutes = require("./routes/stats");
 const Reserva = require('./models/Reserva');
+const { validBookingSlot } = require('./utils/bookingSlot');
 
 
 const app = express();
 
 app.set("trust proxy", 1);
+app.use(helmet());
+app.use(require('compression')());
 
 function formatearFechaDDMMYYYY(fecha) {
   const s = String(fecha || '').trim();
@@ -116,9 +119,16 @@ mongoose.connect(process.env.MONGO_URI)
 
 
 // Crear reserva pendiente y enviar email de confirmación
-app.post('/reservas/hold', optionalAuthUser, async (req, res) => {
+app.post('/reservas/hold', sensitiveLimiter, optionalAuthUser, celebrate({ [Segments.BODY]: Joi.object({
+  canchaId: Joi.string().hex().length(24).required(),
+  fecha: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+  hora: Joi.string().pattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/).required(),
+  email: Joi.string().email({ tlds: { allow: false } }).optional(),
+  usuarioId: Joi.any().optional(),
+  metodoPago: Joi.string().valid('online', 'efectivo').default('efectivo')
+}) }), async (req, res) => {
   try {
-const { canchaId, fecha, hora, usuarioId: usuarioIdBody, email: emailBody, metodoPago } = req.body;
+const { canchaId, fecha, hora, email: emailBody, metodoPago } = req.body;
     let usuarioId = null;
     let email = String(emailBody || '').trim().toLowerCase();
 
@@ -127,13 +137,18 @@ const { canchaId, fecha, hora, usuarioId: usuarioIdBody, email: emailBody, metod
       if (!usuarioAutenticado) return res.status(401).json({ error: 'Usuario no encontrado' });
       usuarioId = usuarioAutenticado._id;
       email = usuarioAutenticado.email;
-    } else {
-      usuarioId = usuarioIdBody || null;
     }
 
     if (!canchaId || !fecha || !hora || !email) {
       return res.status(400).json({ error: 'Faltan datos obligatorios.' });
     }
+
+    const canchaValida = await Cancha.findById(canchaId);
+    if (!canchaValida) return res.status(404).json({ error: 'Cancha no encontrada' });
+    if (!validBookingSlot(canchaValida, fecha, hora)) return res.status(400).json({ error: 'El turno no pertenece a los horarios disponibles' });
+    const clubValido = await Club.findOne({ email: canchaValida.clubEmail, activo: { $ne: false } }).select('_id');
+    if (!clubValido) return res.status(404).json({ error: 'Club no disponible' });
+    if (await Turno.exists({ canchaId, fecha, hora, usuarioReservado: { $nin: [null, ''] } })) return res.status(409).json({ error: 'El turno ya está reservado' });
 
     const codigoOTP = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60000);
@@ -236,9 +251,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
       return res.send('⏳ El enlace expiró. Volvé a reservar.');
     }
 
-    // 3) Confirmar reserva
-    reserva.estado = 'CONFIRMED';
-    await reserva.save();
+    // Validar primero y confirmar de forma atómica antes de ocupar el slot.
 
     // ✅ IMPORTANTE: impactar la reserva en Turno (lo que ve el panel del club)
     // Si el Turno NO existe, lo creamos (porque /turnos-generados no guarda turnos en DB)
@@ -274,40 +287,29 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
       console.error('⚠️ No se pudo calcular precio al confirmar:', e);
     }
 
-    // Buscar turno existente por canchaId+fecha+hora
-    let turno = await Turno.findOne({
-      canchaId: reserva.canchaId,
-      fecha: reserva.fecha,
-      hora: reserva.hora
-    });
+    const claimed = await Reserva.findOneAndUpdate({
+      _id: reserva._id, estado: 'PENDING', codigoOTP: code,
+      expiresAt: { $gt: new Date() }
+    }, { $set: { estado: 'CONFIRMED' } }, { new: true });
+    if (!claimed) return res.status(409).send('Esta reserva ya fue procesada.');
 
-    if (!turno) {
-      // ✅ Crear turno nuevo (esto es lo que faltaba)
-      turno = new Turno({
-        deporte: cancha.deporte,
-        fecha: reserva.fecha,
-        club: cancha.clubEmail, // 👈 clave para que el panel del club lo encuentre
-        hora: reserva.hora,
-        precio: precioCalculado,
-        usuarioReservado: emailReservadoFinal,
-        emailReservado: emailReservadoFinal,
-        usuarioId: usuario?._id || null,
-        pagado: false,
-        canchaId: reserva.canchaId
-      });
-    } else {
-      // ✅ Si ya existía, lo marcamos reservado
-      turno.usuarioReservado = emailReservadoFinal;
-      turno.emailReservado = emailReservadoFinal;
-      turno.usuarioId = usuario?._id || turno.usuarioId || null;
-      turno.pagado = false;
-      turno.precio = precioCalculado;
+    let turno;
+    try {
+      turno = await Turno.findOneAndUpdate({
+        canchaId: String(reserva.canchaId), fecha: reserva.fecha, hora: reserva.hora,
+        $or: [{ usuarioReservado: null }, { usuarioReservado: '' }]
+      }, { $set: {
+        deporte: cancha.deporte, club: cancha.clubEmail,
+        fecha: reserva.fecha, hora: reserva.hora, canchaId: String(reserva.canchaId),
+        precio: precioCalculado, usuarioReservado: emailReservadoFinal,
+        emailReservado: emailReservadoFinal, usuarioId: usuario?._id || null,
+        pagado: false, metodoPago: reserva.metodoPago || 'efectivo'
+      } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
+    } catch (error) {
+      await Reserva.updateOne({ _id: reserva._id, estado: 'CONFIRMED' }, { $set: { estado: 'CANCELLED' } });
+      if (error.code === 11000) return res.status(409).send('El turno ya está reservado.');
+      throw error;
     }
-
-    // Guardar método de pago si existe (por ahora, si no vino, queda efectivo)
-    turno.metodoPago = reserva.metodoPago || turno.metodoPago || 'efectivo';
-
-    await turno.save();
     console.log('✅ Turno guardado/actualizado como reservado:', turno._id);
 
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
@@ -332,7 +334,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
           .send('❌ El club no tiene configurado su Access Token de MercadoPago.');
       }
 
-      mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
+
       console.log('🏦 MP cobrador (club):', clubData.email);
       console.log('🏦 Token de MercadoPago del club cargado correctamente');
 
@@ -366,7 +368,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
 
       let resp;
       try {
-        resp = await mercadopago.preferences.create(preference);
+        resp = await mercadopago.preferences.create(preference, { access_token: clubData.mercadoPagoAccessToken });
       } catch (e) {
         console.error('❌ Error creando preferencia MP:', e?.message || e);
         console.error('❌ Detalle MP:', e?.response?.data || e);
@@ -398,6 +400,7 @@ app.get('/reservas/confirmar/:id/:code', async (req, res) => {
     return res.redirect(`${process.env.FRONT_URL}/reserva-confirmada.html?id=${reserva._id}`);
 
   } catch (error) {
+    if (error.code === 11000) return res.status(409).send('El turno ya está reservado.');
     console.error('❌ Error en confirmación de reserva:', error);
     return res.status(500).send('Error confirmando la reserva');
   }
@@ -680,6 +683,7 @@ app.put('/club/:id/access-token', authClub, async (req, res) => {
 // ✅ NUEVA RUTA: reservar turno
 app.post(
   '/reservar-turno',
+  authClub,
   celebrate({
     [Segments.BODY]: Joi.object({
       deporte: Joi.string().max(40).required(),
@@ -694,11 +698,11 @@ app.post(
     })
   }),
   async (req, res) => {
-     console.log('📦 Body recibido en /reservar-turno:', req.body);
+
     const { deporte, fecha, club, hora, precio, usuarioReservado, emailReservado, metodoPago, canchaId } = req.body;
 
     try {
-      console.log('📦 Datos validados en /reservar-turno:', req.body);
+
 
       // ✅ Buscar el teléfono del usuario automáticamente
       const usuario = await Usuario.findOne({ email: emailReservado });
@@ -706,47 +710,23 @@ app.post(
       // 🔹 Recalcular precio según la cancha y la hora solicitada
       const cancha = await Cancha.findById(canchaId);
       if (!cancha) return res.status(404).json({ error: 'Cancha no encontrada' });
+      if (cancha.clubEmail !== req.clubEmail || club !== req.clubEmail) return res.status(403).json({ error: 'La cancha no pertenece al club autenticado' });
+      if (!validBookingSlot(cancha, fecha, hora)) return res.status(400).json({ error: 'El turno no pertenece a los horarios disponibles' });
 
       const [Y, M, D] = fecha.split('-').map(Number);
       const [h, mm] = hora.split(':').map(Number);
       const inicioReserva = new Date(Y, (M - 1), D, h, mm, 0, 0);
       const precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
 
-      const turnoExistente = await Turno.findOne({ deporte, fecha, hora, club, canchaId });
-
-      let turno;
-      if (turnoExistente) {
-        // ✅ ACTUALIZAR TURNO YA GENERADO
-        turnoExistente.usuarioReservado = usuarioReservado;
-        turnoExistente.emailReservado   = emailReservado;
-        turnoExistente.pagado           = false;
-        turnoExistente.canchaId         = canchaId;
-        turnoExistente.precio           = precioCalculado;
-
-        // 👈 NUEVO: guardar también el usuarioId
-        if (usuario?._id) {
-          turnoExistente.usuarioId = usuario._id;
-        }
-
-        await turnoExistente.save();
-        turno = turnoExistente;
-      } else {
-        // ✅ CREAR TURNO NUEVO
-        turno = new Turno({
-          deporte,
-          fecha,
-          club,
-          hora,
-          precio: precioCalculado,
-          usuarioReservado,
-          emailReservado,
-          usuarioId: usuario?._id,   // ya estaba bien
-          pagado: false,
-          canchaId
-        });
-        await turno.save();
-      }
-
+      // El índice único del slot impide que dos reservas simultáneas se pisen.
+      const turno = await Turno.findOneAndUpdate({
+        canchaId, fecha, hora,
+        $or: [{ usuarioReservado: null }, { usuarioReservado: '' }]
+      }, { $set: {
+        deporte: cancha.deporte, club: cancha.clubEmail, fecha, hora, canchaId,
+        usuarioReservado, emailReservado, usuarioId: usuario?._id || null,
+        precio: precioCalculado, pagado: false, metodoPago
+      } }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true });
 
 if (metodoPago === 'online') {
   const clubData = await Club.findOne({ email: club });
@@ -754,7 +734,7 @@ if (metodoPago === 'online') {
     return res.status(400).json({ error: 'El club no tiene configurado su Access Token' });
   }
 
-  mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
+
 
   const preference = {
     items: [{
@@ -767,7 +747,7 @@ notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
     external_reference: turno._id.toString()
   };
 
-  const response = await mercadopago.preferences.create(preference);
+  const response = await mercadopago.preferences.create(preference, { access_token: clubData.mercadoPagoAccessToken });
   return res.json({ mensaje: 'Turno reservado. Link de pago generado.', pagoUrl: response.body.init_point });
 }
 
@@ -776,6 +756,7 @@ if (metodoPago === 'efectivo') {
 }
 
     } catch (error) {
+      if (error.code === 11000) return res.status(409).json({ error: 'El turno ya está reservado' });
       console.error('❌ Error en /reservar-turno:', error);
       res.status(500).json({ error: 'Error al reservar turno' });
     }
@@ -796,8 +777,7 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
     const yaExiste = await PaymentEvent.findOne({ paymentId });
     if (yaExiste) return res.sendStatus(200);
 
-    // Registrar como procesado ANTES de continuar
-    await PaymentEvent.create({ paymentId });
+    // Registrar solamente después de verificar y aplicar un pago aprobado.
 
     // 1) Resolver TURNO (primero por query, luego por external_reference, luego por pagoId)
     let turno = null;
@@ -837,10 +817,8 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
     }
 
     // ✅ Configurar MP con token del club dueño
-    mercadopago.configure({ access_token: clubData.mercadoPagoAccessToken });
-
     // Traer el pago desde MP (con el token del club correcto)
-    const resp = await mercadopago.payment.findById(paymentId);
+    const resp = await mercadopago.payment.findById(paymentId, { access_token: clubData.mercadoPagoAccessToken });
     const payment = resp?.body || {};
     const status = payment.status;
     const externalRef = payment.external_reference;
@@ -862,6 +840,10 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
 
     // ✅ Marcar pagado si approved
     if (status === 'approved') {
+      if (String(externalRef) !== String(turno._id) || turno.club !== clubData.email ||
+          payment.currency_id !== 'ARS' || Number(payment.transaction_amount) !== Number(turno.precio)) {
+        return res.status(400).json({ error: 'El pago no corresponde a esta reserva' });
+      }
       if (!turno.pagado) {
         turno.pagado = true;
         turno.fechaPago = new Date();
@@ -884,8 +866,12 @@ app.post('/api/mercadopago/webhook', async (req, res) => {
       console.log('ℹ️ Webhook: status intermedio:', status, 'turno:', String(turno._id));
     }
 
+    if (status === 'approved') {
+      await PaymentEvent.updateOne({ paymentId }, { $setOnInsert: { paymentId } }, { upsert: true });
+    }
     return res.sendStatus(200);
   } catch (error) {
+    if (error.code === 11000) return res.sendStatus(200);
     console.error('❌ Error procesando webhook MP:', error);
     return res.sendStatus(500);
   }
@@ -1163,20 +1149,26 @@ app.get('/verificar-club', async (req, res) => {
 
 
 
-app.get('/club/:email', async (req, res) => {
+app.get('/club/:email', (req, res, next) => req.headers.authorization ? authClub(req, res, next) : next(), async (req, res) => {
     try {
-        const club = await Club.findOne({ email: req.params.email });
+        const privateAccess = req.clubEmail === req.params.email;
+        const club = await Club.findOne({ email: req.params.email })
+          .select(privateAccess ? '-passwordHash -resetToken -resetTokenExp -tokenVerificacion -tokenVerificacionExpira' : '_id nombre email telefono provincia localidad latitud longitud destacado destacadoHasta mercadoPagoAccessToken');
         if (!club) return res.status(404).json({ error: 'Club no encontrado' });
-        res.json(club);
+        const data = club.toObject();
+        data.pagoOnlineDisponible = Boolean(data.mercadoPagoAccessToken);
+        if (!privateAccess) delete data.mercadoPagoAccessToken;
+        res.json(data);
     } catch (error) {
         res.status(500).json({ error: 'Error al obtener club' });
     }
 });
 
-app.put('/editar-ubicacion-club', async (req, res) => {
+app.put('/editar-ubicacion-club', authClub, async (req, res) => {
     const { email, latitud, longitud } = req.body;
     try {
-        await Club.findOneAndUpdate({ email }, { latitud, longitud });
+        if (email && email !== req.clubEmail) return res.status(403).json({ error: 'Club no autorizado' });
+        await Club.findByIdAndUpdate(req.clubId, { latitud, longitud });
         res.json({ mensaje: 'Ubicación actualizada correctamente' });
     } catch (error) {
         res.status(500).json({ error: 'Error al actualizar ubicación' });
@@ -1307,9 +1299,9 @@ app.delete('/canchas/:id', authClub, async (req, res) => {
     }
 });
 
-app.get('/turnos', async (req, res) => {
+app.get('/turnos', authClub, async (req, res) => {
     try {
-        const turnos = await Turno.find();
+        const turnos = await Turno.find({ club: req.clubEmail });
         res.json(turnos);
     } catch (error) {
         res.status(500).json({ error: 'Error al obtener turnos' });
@@ -1351,7 +1343,7 @@ app.patch('/turnos/:id/cancelar', authClub, async (req, res) => {
 });
 
 
-app.get('/turnos-generados', async (req, res) => {
+app.get('/turnos-generados', (req, res, next) => req.headers.authorization ? authClub(req, res, next) : next(), async (req, res) => {
   try {
     const { provincia, localidad } = req.query;
 
@@ -1397,7 +1389,7 @@ app.get('/turnos-generados', async (req, res) => {
       : {};
 
     const canchas = await Cancha.find(canchasQuery)
-      .select('_id nombre deporte clubEmail diasDisponibles horaDesde horaHasta duracionTurno precio precioNocturno horaNocturna')
+      .select('_id nombre deporte clubEmail diasDisponibles horaDesde horaHasta duracionTurno precio precioNocturno nocturnoDesde')
       .lean();
 
     const canchaIds = canchas.map(c => c._id);
@@ -1476,8 +1468,9 @@ app.get('/turnos-generados', async (req, res) => {
             fecha: fechaStr,
             hora,
             precio: precioCalculado,
-            usuarioReservado: reservado ? reservado.usuarioReservado : null,
-            emailReservado: reservado ? reservado.emailReservado : null,
+            ocupado: Boolean(reservado?.usuarioReservado),
+            usuarioReservado: reservado?.usuarioReservado ? (req.clubEmail === cancha.clubEmail ? reservado.usuarioReservado : 'RESERVADO') : null,
+            emailReservado: req.clubEmail === cancha.clubEmail && reservado ? reservado.emailReservado : null,
             pagado: reservado ? reservado.pagado : false,
             realId: reservado ? reservado._id : null,
             latitud: clubInfo ? clubInfo.latitud : null,
@@ -1874,7 +1867,7 @@ notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
 // ✅ NUEVA RUTA: obtener los datos de una reserva por ID (incluye teléfono)
 app.get('/reserva/:id', authClub, async (req, res) => {
     try {
-        const reserva = await Turno.findById(req.params.id).populate('usuarioId');
+        const reserva = await Turno.findById(req.params.id).populate('usuarioId', 'nombre apellido email telefono');
 
         // 👇 Este log te muestra qué número tiene realmente el perfil
 
@@ -1970,7 +1963,7 @@ app.post('/api/mercadopago/destacado-webhook', async (req, res) => {
     await PaymentEvent.create({ paymentId });
 
     // Traer el pago desde MP
-    const resp = await mercadopago.payment.findById(paymentId);
+    const resp = await mercadopago.payment.findById(paymentId, { access_token: process.env.MP_ACCESS_TOKEN });
     const pago = resp?.body || {};
     const status = pago.status;
     const clubEmail = pago.external_reference;
@@ -2020,10 +2013,13 @@ app.get('/clubes', async (req, res) => {
   try {
     const { provincia, localidad, q } = req.query;
 
-    const filter = {};
+    const filter = { activo: { $ne: false } };
     if (provincia) filter.provincia = provincia;           // match exacto (igual a lo que carga el select)
     if (localidad) filter.localidad = localidad;           // match exacto
-    if (q) filter.nombre = { $regex: q, $options: 'i' };   // búsqueda por nombre (opcional)
+    if (q) {
+      if (typeof q !== 'string' || q.length > 100) return res.status(400).json({ error: 'Búsqueda inválida' });
+      filter.nombre = { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    }   // búsqueda por nombre (opcional)
 
     const projection = {
       email: 1,

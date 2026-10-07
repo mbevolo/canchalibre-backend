@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const mercadopago = require('mercadopago');
+const mercadopago = require('../utils/mercadopago');
 const Turno = require('../models/Turno');
 const Reserva = require('../models/Reserva');
 const Usuario = require('../models/Usuario');
@@ -10,6 +10,10 @@ const authUser = require('../middlewares/authUser');
 const { sendMail } = require('../utils/email');
 
 const router = express.Router();
+router.param('id', (req, res, next, id) => {
+  if (!require('mongoose').isObjectIdOrHexString(id)) return res.status(400).json({ error: 'ID inválido' });
+  next();
+});
 
 async function getCurrentUser(req) {
   return Usuario.findById(req.userId).select('_id email nombre apellido telefono').lean();
@@ -59,8 +63,9 @@ router.get('/reservas', authUser, async (req, res) => {
     return res.json(all.map(r => {
       const cancha = canchaMap.get(String(r.canchaId));
       const clubEmail = r.club || cancha?.clubEmail;
+      const { codigoOTP, ...publicReserva } = r;
       return {
-        ...r,
+        ...publicReserva,
         nombreClub: clubMap.get(String(clubEmail || '').toLowerCase()) || 'Club desconocido',
         nombreCancha: cancha?.nombre || null,
         deporte: r.deporte || cancha?.deporte || null
@@ -135,11 +140,14 @@ router.patch('/turnos/:id/cancel', authUser, async (req, res) => {
   try {
     const turno = await Turno.findOne({ _id: req.params.id, usuarioId: req.userId });
     if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
+    if (turno.pagado) return res.status(409).json({ error: 'Contactá al club para cancelar una reserva pagada y gestionar el reintegro' });
 
-    await Turno.updateOne(
-      { _id: turno._id },
+    const cancelled = await Turno.updateOne(
+      { _id: turno._id, usuarioId: req.userId, pagado: false },
       { $set: { usuarioReservado: null, emailReservado: null, usuarioId: null, pagado: false } }
     );
+    if (!cancelled.modifiedCount) return res.status(409).json({ error: 'La reserva cambió; volvé a consultarla' });
+    await Reserva.updateMany({ canchaId: turno.canchaId, fecha: turno.fecha, hora: turno.hora, usuarioId: req.userId, estado: 'CONFIRMED' }, { $set: { estado: 'CANCELLED' } });
     return res.json({ mensaje: 'Turno cancelado correctamente.' });
   } catch (error) {
     console.error('❌ Error cancelando turno:', error);
@@ -158,7 +166,6 @@ router.post('/turnos/:id/payment-link', authUser, async (req, res) => {
       return res.status(400).json({ error: 'El club no tiene configurado su Access Token' });
     }
 
-    mercadopago.configure({ access_token: club.mercadoPagoAccessToken });
     const preference = {
       items: [{
         title: 'Reserva de cancha - ' + (turno.deporte || 'CanchaLibre'),
@@ -166,11 +173,11 @@ router.post('/turnos/:id/payment-link', authUser, async (req, res) => {
         currency_id: 'ARS',
         unit_price: Number(turno.precio || 0)
       }],
-      notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook',
+      notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook?club=' + encodeURIComponent(club.email) + '&turno=' + turno._id,
       external_reference: String(turno._id)
     };
 
-    const response = await mercadopago.preferences.create(preference);
+    const response = await mercadopago.preferences.create(preference, { access_token: club.mercadoPagoAccessToken });
     return res.json({ pagoUrl: response?.body?.init_point || null });
   } catch (error) {
     console.error('❌ Error generando link de pago:', error);
