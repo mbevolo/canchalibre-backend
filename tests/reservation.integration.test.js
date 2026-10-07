@@ -85,6 +85,14 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     const privateData = await privateClub.json();
     assert.equal(privateData.passwordHash, undefined);
     assert.equal(privateData.mercadoPagoAccessToken, 'TEST-private-club-token');
+    assert.equal((await request('/club/' + clubFixture._id, { method: 'PUT', body: { direccion: 'Sin permiso' } })).status, 401);
+    const profileSaved = await request('/club/' + clubFixture._id, { method: 'PUT', token: clubToken, body: { direccion: 'San Martín 123', latitud: -32.41, longitud: -63.25 } });
+    assert.equal(profileSaved.status, 200);
+    assert.equal((await profileSaved.json()).club.direccion, 'San Martín 123');
+    assert.equal((await Club.findById(clubFixture._id)).longitud, -63.25);
+    assert.equal((await request('/club/' + clubFixture._id, { method: 'PUT', token: clubToken, body: { latitud: 100 } })).status, 400);
+    assert.equal((await request('/club/perfil/publico', { method: 'PUT', token: clubToken, body: { direccion: 'Dirección desactualizada', descripcion: 'Descripción', servicios: [], fotos: [] } })).status, 200);
+    assert.equal((await Club.findById(clubFixture._id)).direccion, 'San Martín 123');
     const clubBooking = { canchaId: String(cancha._id), deporte: 'padel', club: clubFixture.email, fecha: '2030-01-10', hora: '12:00', precio: 1000, usuarioReservado: 'Test', emailReservado: 'test@example.com', metodoPago: 'efectivo' };
     const concurrentBookings = await Promise.all([request('/reservar-turno', { method: 'POST', token: clubToken, body: clubBooking }), request('/reservar-turno', { method: 'POST', token: clubToken, body: clubBooking })]);
     assert.deepEqual(concurrentBookings.map(r => r.status).sort(), [200, 409]);

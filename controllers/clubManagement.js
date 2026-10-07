@@ -1,3 +1,4 @@
+const Joi = require('joi');
 const Club = require('../models/Club');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -151,7 +152,16 @@ const postRegistroClub = async (req, res) => {
 };
 
 const putClubId = async (req, res) => {
-  const { nombre, telefono, provincia, localidad } = req.body;
+  const input = Joi.object({
+    nombre: Joi.string().trim().max(100),
+    telefono: Joi.string().trim().max(30).allow(''),
+    provincia: Joi.string().trim().max(100),
+    localidad: Joi.string().trim().max(100),
+    direccion: Joi.string().trim().max(250).allow(''),
+    latitud: Joi.number().min(-90).max(90),
+    longitud: Joi.number().min(-180).max(180),
+  }).min(1).unknown(false).validate(req.body);
+  if (input.error) return res.status(400).json({ error: 'Datos del club inválidos' });
 
   if (String(req.params.id) !== String(req.clubId)) {
     return res
@@ -162,10 +172,10 @@ const putClubId = async (req, res) => {
   try {
     const club = await Club.findByIdAndUpdate(
       req.clubId,
-      { nombre, telefono, provincia, localidad },
-      { new: true },
+      { $set: input.value },
+      { new: true, runValidators: true },
     ).select(
-      'nombre email telefono provincia localidad latitud longitud destacado destacadoHasta activo',
+      'nombre email telefono direccion provincia localidad latitud longitud destacado destacadoHasta activo',
     );
 
     if (!club) return res.status(404).json({ error: 'Club no encontrado' });
