@@ -5,7 +5,9 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:integration": "node scripts/test-integration.cjs",
-    "test:web": "node scripts/test-web.cjs"
+    "test:web": "node scripts/test-web.cjs",
+    "test:load": "node scripts/test-load.cjs",
+    "audit:data": "node scripts/audit-data.cjs"
   },
   "keywords": [],
   "author": "",

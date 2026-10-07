@@ -268,6 +268,19 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal((await request('/turnos', { token: clubToken })).status, 403);
     await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });
     assert.equal((await request('/turnos', { token: clubToken })).status, 200);
+    const { dataAudit } = require('../utils/dataAudit');
+    const healthy = await dataAudit(mongoose.connection.db);
+    assert.equal(healthy.uniqueSlotIndex, true);
+    assert.equal(healthy.counts.duplicateSlotGroups, 0);
+    assert.equal(healthy.counts.duplicateConfirmedGroups, 0);
+    assert.equal(healthy.counts.paidWithoutBooking, 0);
+    const orphan = await Turno.create({ canchaId: 'missing-court', club: 'missing@example.com', fecha: '2030-02-01', hora: '08:00', pagado: true });
+    const inconsistent = await dataAudit(mongoose.connection.db);
+    assert.ok(inconsistent.counts.slotsWithoutCourt > healthy.counts.slotsWithoutCourt);
+    assert.equal(inconsistent.counts.paidWithoutBooking, 1);
+    assert.equal(await Turno.countDocuments({ _id: orphan._id }), 1, 'Audit does not repair or delete records');
+    assert.ok(!JSON.stringify(inconsistent).includes(user.email));
+    await Turno.deleteOne({ _id: orphan._id });
     assert.equal((await request('/auth/logout', { method: 'POST', cookie: newCookie })).status, 200);
     assert.equal((await request('/auth/refresh', { method: 'POST', cookie: newCookie })).status, 401);
   } finally {
