@@ -107,3 +107,13 @@ Estado del plan: etapa 2 (separación del monolito) realizada; etapas 4/5 amplia
 - Sin secreto o con configuración inválida devuelve 503; no existe bypass por entorno. Sin firma válida devuelve 401. Los reintentos tardíos siguen sujetos a firma y a idempotencia, sin imponer una ventana temporal que descarte reenvíos legítimos.
 - Contrato legacy IPN sin firma no aceptado. Antes de desplegar, configurar Webhooks en cada aplicación correspondiente y validar recepción real en sandbox. Referencia oficial: https://www.mercadopago.com.ar/developers/en/docs/wallet-connect/notifications (plantilla de firma).
 - Pruebas locales de firma y recorrido de pagos aprobados, pendientes, duplicados y rollback usan secretos/pagos simulados. No sustituyen una prueba de Mercado Pago real. La credencial MongoDB expuesta sigue pendiente de revocación confirmada en Atlas.
+
+## Revisión adicional de buscador y paneles
+
+- Login de usuario y club rechaza email/password estructurados, vacíos o excesivamente largos antes de consultar credenciales.
+- Directorio público valida tipos y longitud de provincia/localidad/búsqueda; usa lecturas lean con proyección explícita. Consulta por ID excluye clubes suspendidos.
+- Frontend: mapa sin código interpolado en onclick, horarios agrupados por ubicación, contenido construido al abrir marcador y mapa anterior liberado. Enlaces de destaque con HTTPS y DOM seguro; agenda/listado bloquean solicitudes de pago repetidas.
+- Panel del club: resumen de reservas de hoy escapa nombre/teléfono y toma el día de Argentina, no UTC. Edición/eliminación de canchas usa eventos DOM.
+- SuperAdmin: cambios rápidos de sección descartan respuestas tardías, incluidos errores de solicitudes anteriores.
+- MongoDB: usuario `turnolibre_user` compartido con producción confirmado por el titular. Rotación en Atlas y actualización coordinada de Render postergadas explícitamente; la credencial expuesta sigue vigente. No se modificaron esos servicios.
+- No se completó un rediseño integral ni se validaron proveedores/infraestructura real: continúan pendientes sandbox de MP, Brevo y auditoría de datos de desarrollo con acceso autorizado.

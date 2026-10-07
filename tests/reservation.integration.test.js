@@ -68,6 +68,12 @@ test('login, refresh, reservation ownership, confirmation and logout', {
       }
       return fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined, redirect: 'manual' });
     }
+    for (const path of ['/auth/login', '/login-club']) {
+      for (const body of [{ email: { $ne: null }, password }, { email: 'owner@canchalibre.local', password: {} }, { email: ['owner@canchalibre.local'], password }])
+        assert.equal((await request(path, { method: 'POST', body })).status, 400);
+    }
+    for (const query of ['provincia=a&provincia=b', 'localidad=a&localidad=b', 'q=a&q=b', 'q=' + 'a'.repeat(101)])
+      assert.equal((await request('/clubes?' + query)).status, 400);
     const publicClub = await request('/club/club@canchalibre.local');
     const publicData = await publicClub.json();
     assert.equal(publicData.passwordHash, undefined);
@@ -282,6 +288,7 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.ok((await Turno.find({ canchaId: String(cancha._id) })).every(t => t.club === 'renamed@example.com'));
     assert.equal((await request('/turnos', { token: clubToken })).status, 200);
     await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });
+    assert.equal((await request('/club-id/' + clubFixture._id)).status, (await Club.findById(clubFixture._id)).activo ? 200 : 404);
     assert.equal((await request('/turnos', { token: clubToken })).status, 403);
     assert.deepEqual(await (await request('/turnos-generados?fecha=2030-01-10&club=renamed@example.com')).json(), []);
     await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });

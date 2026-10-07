@@ -5,6 +5,11 @@ const getClubes = async (req, res) => {
   try {
     const { provincia, localidad, q } = req.query;
 
+    for (const value of [provincia, localidad, q]) {
+      if (value !== undefined && (typeof value !== 'string' || value.length > 100))
+        return res.status(400).json({ error: 'Filtro inválido' });
+    }
+
     const filter = { activo: { $ne: false } };
     if (provincia) filter.provincia = provincia; // match exacto (igual a lo que carga el select)
     if (localidad) filter.localidad = localidad; // match exacto
@@ -29,7 +34,7 @@ const getClubes = async (req, res) => {
       _id: 0,
     };
 
-    const clubes = await Club.find(filter, projection).sort({
+    const clubes = await Club.find(filter, projection).lean().sort({
       destacado: -1,
       nombre: 1,
     });
@@ -49,7 +54,7 @@ const getClubIdId = async (req, res) => {
     }
 
     // Traemos el club por _id
-    const club = await Club.findById(id, {
+    const club = await Club.findOne({ _id: id, activo: { $ne: false } }, {
       email: 1,
       nombre: 1,
       provincia: 1,
@@ -58,7 +63,7 @@ const getClubIdId = async (req, res) => {
       longitud: 1,
       destacado: 1,
       destacadoHasta: 1,
-    });
+    }).lean();
 
     if (!club) return res.status(404).json({ error: 'Club no encontrado' });
 

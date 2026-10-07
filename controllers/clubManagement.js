@@ -177,7 +177,10 @@ const putClubId = async (req, res) => {
 };
 
 const postLoginClub = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
+  if (typeof email !== 'string' || !email.trim() || email.length > 254 ||
+      typeof password !== 'string' || !password || password.length > 1024)
+    return res.status(400).json({ error: 'Credenciales inválidas' });
 
   try {
 

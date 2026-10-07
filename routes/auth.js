@@ -71,7 +71,9 @@ async function createSession(usuario, req, res) {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'Faltan credenciales' });
+    if (typeof email !== 'string' || !email.trim() || email.length > 254 ||
+        typeof password !== 'string' || !password || password.length > 1024)
+      return res.status(400).json({ error: 'Credenciales inválidas' });
 
     const usuario = await Usuario.findOne({ email: String(email).trim().toLowerCase() });
     const hash = usuario?.passwordHash || usuario?.password;
