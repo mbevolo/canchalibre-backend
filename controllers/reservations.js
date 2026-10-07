@@ -199,6 +199,12 @@ const getReservasConfirmarIdCode = async (req, res) => {
       metodoPago: reserva.metodoPago || 'efectivo',
     });
 
+    let clubConfirmado = null;
+    try { clubConfirmado = await Club.findOne({ email: cancha.clubEmail }); } catch (_) {}
+    await require('../services/confirmationEmail').sendConfirmationEmail(
+      turno, cancha, clubConfirmado, emailReservadoFinal,
+    );
+
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
 
     const metodoFinal = turno.metodoPago || reserva.metodoPago || 'efectivo';

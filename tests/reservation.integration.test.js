@@ -196,6 +196,14 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal((await request('/auth/refresh', { method: 'POST', cookie: 'canchalibre_refresh=%zz' })).status, 401);
     const confirm = await request('/reservas/confirmar/' + reservaId + '/' + reserva.codigoOTP);
     assert.equal(confirm.status, 302);
+    const receipts = () => sent.filter(mail => mail[1] === 'Reserva confirmada · CanchaLibre');
+    assert.equal(receipts().length, 1);
+    assert.equal(receipts()[0][0], user.email);
+    assert.match(receipts()[0][2], /Test Club/);
+    assert.match(receipts()[0][2], /Test Court/);
+    assert.match(receipts()[0][2], /10\/01\/2030/);
+    await request('/reservas/confirmar/' + reservaId + '/' + reserva.codigoOTP);
+    assert.equal(receipts().length, 1);
     assert.equal((await Reserva.findById(reservaId)).estado, 'CONFIRMED');
     const turno = await Turno.findOne({ canchaId: String(cancha._id) });
     assert.equal(String(turno.usuarioId), String(user._id));
