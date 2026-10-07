@@ -6,6 +6,9 @@ const signature = require('../middlewares/mercadoPagoSignature');
 
 test('webhooks authenticate the fetched ID and reject tampering before processing', async () => {
   const old = { ...process.env };
+  const Config = require('../models/config');
+  const oldFind = Config.findOne;
+  Config.findOne = () => ({ select: async () => null });
   process.env.MP_WEBHOOK_SECRET = 'test-shared-secret';
   process.env.MP_FEATURED_WEBHOOK_SECRET = 'test-featured-secret';
   delete process.env.MP_CLUB_WEBHOOK_SECRETS;
@@ -47,6 +50,7 @@ test('webhooks authenticate the fetched ID and reject tampering before processin
     assert.equal((await send('/booking?data.id=ABC123', headers('test-shared-secret'))).status, 503);
     assert.equal(processed, 3);
   } finally {
+    Config.findOne = oldFind;
     await new Promise(resolve => server.close(resolve));
     for (const key of ['MP_WEBHOOK_SECRET', 'MP_FEATURED_WEBHOOK_SECRET', 'MP_CLUB_WEBHOOK_SECRETS'])
       if (old[key] === undefined) delete process.env[key]; else process.env[key] = old[key];

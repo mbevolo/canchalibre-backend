@@ -2,6 +2,7 @@ const Club = require('../models/Club');
 const Config = require('../models/config');
 const DestacadoOrder = require('../models/DestacadoOrder');
 const mercadopago = require('../utils/mercadopago');
+const platformMP = require('../services/platformMercadoPago');
 
 const postClubEmailDestacarPago = async (req, res) => {
   try {
@@ -17,6 +18,9 @@ const postClubEmailDestacarPago = async (req, res) => {
 
     const precioDestacado = config.precioDestacado;
     const diasDestacado = config.diasDestacado;
+
+    const { accessToken, webhookSecret } = await platformMP.credentials();
+    if (!accessToken || !webhookSecret) return res.status(503).json({ error: 'Los cobros por destacados todavía no están configurados.' });
 
     const order = await DestacadoOrder.create({
       clubId: club._id,
@@ -34,17 +38,17 @@ const postClubEmailDestacarPago = async (req, res) => {
         },
       ],
       notification_url:
-        'https://api.canchalibre.ar/api/mercadopago/destacado-webhook',
+        (process.env.APP_BASE_URL || 'https://api.canchalibre.ar').replace(/\/$/, '') + '/api/mercadopago/destacado-webhook',
       external_reference: 'destacado:' + order._id,
       back_urls: {
-        success: 'https://api.canchalibre.ar/panel-club.html',
-        failure: 'https://api.canchalibre.ar/panel-club.html',
+        success: (process.env.FRONT_URL || 'https://canchalibre.ar').replace(/\/$/, '') + '/panel-club.html',
+        failure: (process.env.FRONT_URL || 'https://canchalibre.ar').replace(/\/$/, '') + '/panel-club.html',
       },
       auto_return: 'approved',
     };
 
     const response = await mercadopago.preferences.create(preference, {
-      access_token: process.env.MP_ACCESS_TOKEN,
+      access_token: accessToken,
     });
 
     res.json({ pagoUrl: response.body.init_point });

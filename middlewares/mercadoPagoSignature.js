@@ -2,10 +2,14 @@ const { createHmac, timingSafeEqual } = require('node:crypto');
 
 // The ID authenticated by MP must also be the ID fetched from its API.
 function mercadoPagoSignature(featured = false) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     let secret = featured
       ? process.env.MP_FEATURED_WEBHOOK_SECRET || process.env.MP_WEBHOOK_SECRET
       : process.env.MP_WEBHOOK_SECRET;
+    if (featured) {
+      try { secret = (await require('../services/platformMercadoPago').credentials()).webhookSecret; }
+      catch (_) { return res.status(503).json({ error: 'Webhook sin configuración válida' }); }
+    }
     if (!featured && process.env.MP_CLUB_WEBHOOK_SECRETS) {
       try {
         const secrets = JSON.parse(process.env.MP_CLUB_WEBHOOK_SECRETS);

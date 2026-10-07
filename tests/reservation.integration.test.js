@@ -105,6 +105,52 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal((await request('/superadmin/login', { method: 'POST', body: { email: { $ne: null }, password } })).status, 400);
     assert.equal((await request('/superadmin/configuraciones', { method: 'PUT', token: adminToken, body: { precioDestacado: -1 } })).status, 400);
     assert.equal((await request('/superadmin/configuraciones', { method: 'PUT', token: adminToken, body: { precioDestacado: 2500, diasDestacado: 7 } })).status, 200);
+    // Credenciales de plataforma: autorización, verificación, cifrado y uso efectivo.
+    assert.equal((await request('/superadmin/mercadopago')).status, 401);
+    assert.equal((await request('/superadmin/mercadopago', { method: 'PUT', token: adminToken, body: { accessToken: 'bad' } })).status, 400);
+    const originalFetch = global.fetch;
+    global.fetch = async (url, options) => String(url) === 'https://api.mercadolibre.com/users/me'
+      ? { ok: true, json: async () => ({ id: 123, site_id: 'MLA', email: 'admin-mp@example.test', first_name: 'Admin', tags: ['test_user'] }) }
+      : originalFetch(url, options);
+    try {
+      const saved = await request('/superadmin/mercadopago', { method: 'PUT', token: adminToken, body: { accessToken: 'TEST-platform-secret-for-testing', webhookSecret: 'platform-webhook-secret' } });
+      assert.equal(saved.status, 200);
+      const savedText = await saved.text();
+      assert.ok(!savedText.includes('TEST-platform-secret-for-testing'));
+      assert.ok(!savedText.includes('platform-webhook-secret'));
+      assert.equal(JSON.parse(savedText).mercadopago.account.id, '123');
+      const ConfigModel = require('../models/config');
+      const dbConfig = await ConfigModel.findOne().select('+mpTokenEncrypted +mpWebhookEncrypted');
+      assert.ok(!dbConfig.mpTokenEncrypted.includes('TEST-platform-secret-for-testing'));
+      const creds = await require('../services/platformMercadoPago').credentials();
+      assert.equal(creds.accessToken, 'TEST-platform-secret-for-testing');
+      assert.equal(creds.webhookSecret, 'platform-webhook-secret');
+      const cfgText = await (await request('/superadmin/configuraciones', { token: adminToken })).text();
+      assert.ok(!cfgText.includes('mpTokenEncrypted') && !cfgText.includes('mpWebhookEncrypted'));
+      const publicText = await (await request('/configuracion-destacado')).text();
+      assert.ok(!publicText.includes('mpTokenEncrypted'));
+      const preferenceOriginal = mercadopago.preferences.create;
+      try {
+        mercadopago.preferences.create = async (body, options) => {
+          assert.equal(options.access_token, 'TEST-platform-secret-for-testing');
+          assert.equal(body.back_urls.success, 'http://localhost:8080/panel-club.html');
+          return { body: { init_point: 'https://checkout.test/featured' } };
+        };
+        assert.equal((await request('/club/' + clubFixture.email + '/destacar-pago', { method: 'POST', token: clubToken })).status, 200);
+      } finally { mercadopago.preferences.create = preferenceOriginal; }
+      const originalLookup = mercadopago.payment.findById;
+      const previousSignatureSecret = process.env.MP_WEBHOOK_SECRET;
+      try {
+        process.env.MP_WEBHOOK_SECRET = 'platform-webhook-secret';
+        mercadopago.payment.findById = async (id, options) => {
+          assert.equal(options.access_token, 'TEST-platform-secret-for-testing');
+          return { body: { status: 'pending', external_reference: 'destacado:pending-test' } };
+        };
+        assert.equal((await request('/api/mercadopago/destacado-webhook', { method: 'POST', body: { data: { id: 'configured-platform-payment' } } })).status, 200);
+      } finally { mercadopago.payment.findById = originalLookup; process.env.MP_WEBHOOK_SECRET = previousSignatureSecret; }
+      assert.equal((await request('/superadmin/resumen', { token: adminToken })).status, 200);
+      await ConfigModel.updateOne({}, { $unset: { mpTokenEncrypted: 1, mpWebhookEncrypted: 1, mpAccount: 1, mpVerifiedAt: 1 } });
+    } finally { global.fetch = originalFetch; }
     assert.equal((await request('/club/' + clubFixture.email + '/destacar-pago', { method: 'POST' })).status, 401);
     const originalPreference = mercadopago.preferences.create;
     let featuredReference;

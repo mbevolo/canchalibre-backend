@@ -119,7 +119,7 @@ const postApiMercadopagoDestacadoWebhook = async (req, res) => {
 
     // Traer el pago desde MP
     const resp = await mercadopago.payment.findById(paymentId, {
-      access_token: process.env.MP_ACCESS_TOKEN,
+      access_token: (await require('../services/platformMercadoPago').credentials()).accessToken,
     });
     const pago = resp?.body || {};
     const status = pago.status;

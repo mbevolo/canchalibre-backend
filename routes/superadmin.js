@@ -13,6 +13,8 @@ const superadminAuth = require('../middlewares/superadminAuth');
 const Turno = require('../models/Turno');
 const router = express.Router();
 const Config = require('../models/config');
+const platformMP = require('../services/platformMercadoPago');
+const DestacadoOrder = require('../models/DestacadoOrder');
 const { cancelTurno } = require('../services/reservations');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('Falta JWT_SECRET en .env');
@@ -45,10 +47,48 @@ router.post('/login', require('../middlewares/rateLimits').sensitiveLimiter, asy
   }
 });
 
+// Resumen administrativo: cobros propios separados de las reservas de clubes.
+router.get('/resumen', superadminAuth, async (req, res) => {
+  try {
+    const [clubes, usuarios, reservas, destacados, revenue] = await Promise.all([
+      Club.countDocuments(), Usuario.countDocuments(), Turno.countDocuments(),
+      Club.countDocuments({ destacado: true, destacadoHasta: { $gt: new Date() } }),
+      DestacadoOrder.aggregate([{ $match: { paymentId: { $ne: null } } }, { $group: { _id: null, total: { $sum: '$precio' }, cantidad: { $sum: 1 } } }]),
+    ]);
+    res.json({ ok: true, resumen: { clubes, usuarios, reservas, destacados, ingresosDestacados: revenue[0]?.total || 0, destacadosPagados: revenue[0]?.cantidad || 0 } });
+  } catch (_) { res.status(500).json({ ok: false, msg: 'No se pudo cargar el resumen' }); }
+});
+router.get('/mercadopago', superadminAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const config = await Config.findOne().select('+mpTokenEncrypted +mpWebhookEncrypted');
+    res.json({ ok: true, mercadopago: platformMP.status(config) });
+  } catch (_) { res.status(500).json({ ok: false, msg: 'No se pudo cargar la configuración de MercadoPago' }); }
+});
+router.put('/mercadopago', superadminAuth, require('../middlewares/rateLimits').sensitiveLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const input = Joi.object({
+    accessToken: Joi.string().trim().min(20).max(500).pattern(/^(APP_USR-|TEST-)[A-Za-z0-9_-]+$/),
+    webhookSecret: Joi.string().trim().min(16).max(256).pattern(/^[A-Za-z0-9_-]+$/),
+  }).min(1).unknown(false).validate(req.body);
+  if (input.error) return res.status(400).json({ ok: false, msg: 'Ingresá un Access Token o una clave de notificaciones válida.' });
+  try {
+    const updates = {};
+    if (input.value.accessToken) {
+      updates.mpAccount = await platformMP.verifyAccount(input.value.accessToken);
+      updates.mpTokenEncrypted = platformMP.encrypt(input.value.accessToken);
+      updates.mpVerifiedAt = new Date();
+    }
+    if (input.value.webhookSecret) updates.mpWebhookEncrypted = platformMP.encrypt(input.value.webhookSecret);
+    const config = await Config.findOneAndUpdate({}, { $set: updates }, { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }).select('+mpTokenEncrypted +mpWebhookEncrypted');
+    res.json({ ok: true, mercadopago: platformMP.status(config) });
+  } catch (error) { res.status(error.status || 502).json({ ok: false, msg: error.status ? error.message : 'No se pudo verificar o guardar MercadoPago. Intentá nuevamente.' }); }
+});
+
 // Listado de clubes solo para superadmin (PROTEGIDO)
 router.get('/clubes', superadminAuth, async (req, res) => {
   try {
-    const clubes = await Club.find();
+    const clubes = await Club.find().select('-passwordHash -mercadoPagoAccessToken -fotos');
     res.json({ ok: true, clubes });
   } catch (err) {
     res.status(500).json({ ok: false, msg: err.message });
@@ -58,7 +98,7 @@ router.get('/clubes', superadminAuth, async (req, res) => {
 // Listado de usuarios solo para superadmin (PROTEGIDO)
 router.get('/usuarios', superadminAuth, async (req, res) => {
   try {
-    const usuarios = await Usuario.find();
+    const usuarios = await Usuario.find().select('-passwordHash -password');
     res.json({ ok: true, usuarios });
   } catch (err) {
     res.status(500).json({ ok: false, msg: err.message });
@@ -79,7 +119,8 @@ router.get('/reservas', superadminAuth, async (req, res) => {
 router.get('/pagos', superadminAuth, async (req, res) => {
   try {
     const pagos = await Turno.find({ pagado: true });
-    res.json({ ok: true, pagos });
+    const cobrosDestacados = await DestacadoOrder.find({ paymentId: { $ne: null } }).populate('clubId', 'nombre email').sort({ createdAt: -1 }).lean();
+    res.json({ ok: true, pagos, cobrosDestacados });
   } catch (err) {
     res.status(500).json({ ok: false, msg: err.message });
   }
@@ -89,7 +130,7 @@ router.get('/pagos', superadminAuth, async (req, res) => {
 router.get('/destacados', superadminAuth, async (req, res) => {
   try {
     // Trae todos los clubes que tienen destacado en true
-    const destacados = await Club.find({ destacado: true });
+    const destacados = await Club.find({ destacado: true }).select('-passwordHash -mercadoPagoAccessToken -fotos');
     res.json({ ok: true, destacados });
   } catch (err) {
     res.status(500).json({ ok: false, msg: err.message });
