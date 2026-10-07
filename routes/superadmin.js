@@ -1,3 +1,6 @@
+const Joi = require('joi');
+const Cancha = require('../models/Cancha');
+const { transaction, failure } = require('../utils/reservationWrites');
 // @ts-nocheck
 
 const express = require('express');
@@ -145,16 +148,26 @@ router.put('/configuraciones', superadminAuth, async (req, res) => {
 // Editar club (solo superadmin)
 router.put('/clubes/:id', superadminAuth, async (req, res) => {
   try {
-    const { nombre, email, telefono, activo } = req.body;
-    const club = await Club.findByIdAndUpdate(
-      req.params.id,
-      { nombre, email, telefono, activo },
-      { new: true }
-    );
-    if (!club) return res.status(404).json({ ok: false, msg: 'Club no encontrado' });
+    const input = Joi.object({
+      nombre: Joi.string().trim().max(100), email: Joi.string().trim().lowercase().email({ tlds: { allow: false } }),
+      telefono: Joi.string().max(30).allow(''), activo: Joi.boolean().strict()
+    }).min(1).validate(req.body);
+    if (input.error) return res.status(400).json({ ok: false, msg: 'Datos de club inválidos' });
+    const club = await transaction(async session => {
+      const current = await Club.findById(req.params.id).session(session);
+      if (!current) throw failure(404, 'Club no encontrado');
+      const oldEmail = current.email;
+      Object.assign(current, input.value);
+      await current.save({ session });
+      if (current.email !== oldEmail) {
+        await Cancha.updateMany({ clubEmail: oldEmail }, { $set: { clubEmail: current.email } }, { session });
+        await Turno.updateMany({ club: oldEmail }, { $set: { club: current.email } }, { session });
+      }
+      return current;
+    });
     res.json({ ok: true, club });
   } catch (err) {
-    res.status(500).json({ ok: false, msg: err.message });
+    res.status(err.status || 500).json({ ok: false, msg: err.status ? err.message : 'No se pudo editar el club' });
   }
 });
 

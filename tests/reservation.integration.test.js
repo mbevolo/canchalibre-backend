@@ -125,6 +125,20 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.equal(stats.reservasPorDia[9].cantidad, 1);
     assert.equal(stats.ocupacionPromedio, 1 / 70 * 100);
     assert.equal((await request('/api/stats/overview?anio=2030&mes=13', { token: clubToken })).status, 400);
+    const courtBody = { nombre: 'Court ABM', deporte: 'padel', precio: 1200, horaDesde: '08:30', horaHasta: '09:30', diasDisponibles: ['jueves'], clubEmail: clubFixture.email, duracionTurno: 60 };
+    assert.equal((await request('/canchas', { method: 'POST', token: clubToken, body: { ...courtBody, horaDesde: 8 } })).status, 400);
+    assert.equal((await request('/canchas', { method: 'POST', token: clubToken, body: { ...courtBody, horaHasta: '08:00' } })).status, 400);
+    assert.equal((await request('/canchas', { method: 'POST', token: clubToken, body: courtBody })).status, 200);
+    const abmCourt = await Cancha.findOne({ nombre: courtBody.nombre });
+    assert.ok(abmCourt);
+    const foreignCourt = await Cancha.create({ ...courtBody, nombre: 'Foreign', clubEmail: 'foreign@example.com' });
+    assert.equal((await request('/canchas/' + foreignCourt._id, { method: 'PUT', token: clubToken, body: courtBody })).status, 403);
+    assert.equal((await request('/canchas/' + foreignCourt._id, { method: 'DELETE', token: clubToken })).status, 403);
+    assert.equal((await request('/canchas/' + abmCourt._id, { method: 'PUT', token: clubToken, body: { ...courtBody, precio: 1500 } })).status, 200);
+    assert.equal((await Cancha.findById(abmCourt._id)).precio, 1500);
+    assert.equal((await request('/canchas/' + abmCourt._id, { method: 'DELETE', token: clubToken })).status, 200);
+    assert.equal(await Cancha.findById(abmCourt._id), null);
+    await Cancha.deleteOne({ _id: foreignCourt._id });
     const login = await request('/auth/login', { method: 'POST', body: { email: user.email, password } });
     assert.equal(login.status, 200);
     const { accessToken } = await login.json();
@@ -173,6 +187,16 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     assert.ok(slots.length > 0);
     assert.ok(slots.every(slot => slot.emailReservado === null));
     assert.ok(!JSON.stringify(slots).includes(user.email));
+    assert.equal((await request('/turnos/' + turno._id + '/payment-link', { method: 'POST' })).status, 401);
+    const originalCourtPreference = mercadopago.preferences.create;
+    try {
+      mercadopago.preferences.create = async (body, options) => {
+        assert.equal(options.access_token, 'TEST-private-club-token');
+        assert.equal(body.external_reference, require('../utils/paymentWrites').paymentReference(turno));
+        return { body: { init_point: 'https://sandbox.example.test/court' } };
+      };
+      assert.equal((await request('/turnos/' + turno._id + '/payment-link', { method: 'POST', token: clubToken })).status, 200);
+    } finally { mercadopago.preferences.create = originalCourtPreference; }
     const webhook = '/api/mercadopago/webhook?club=club%40canchalibre.local&turno=' + turno._id;
     paymentResponse = { status: 'pending', external_reference: require('../utils/paymentWrites').paymentReference(turno), transaction_amount: turno.precio, currency_id: 'ARS' };
     assert.equal((await request(webhook, { method: 'POST', body: { data: { id: 'test-payment' } } })).status, 200);
@@ -227,6 +251,14 @@ test('login, refresh, reservation ownership, confirmation and logout', {
     const confirmed = await Promise.all(conflicts.map(r => request('/reservas/confirmar/' + r._id + '/' + r.codigoOTP)));
     assert.deepEqual(confirmed.map(r => r.status).sort(), [302, 409]);
     assert.equal(await Turno.countDocuments({ canchaId: String(cancha._id), fecha: '2030-01-10', hora: '14:00' }), 1);
+    assert.equal((await request('/superadmin/clubes/' + clubFixture._id, { method: 'PUT', token: adminToken, body: { email: 'renamed@example.com' } })).status, 200);
+    assert.equal((await Cancha.findById(cancha._id)).clubEmail, 'renamed@example.com');
+    assert.ok((await Turno.find({ canchaId: String(cancha._id) })).every(t => t.club === 'renamed@example.com'));
+    assert.equal((await request('/turnos', { token: clubToken })).status, 200);
+    await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });
+    assert.equal((await request('/turnos', { token: clubToken })).status, 403);
+    await request('/superadmin/clubes/' + clubFixture._id + '/suspender', { method: 'PATCH', token: adminToken });
+    assert.equal((await request('/turnos', { token: clubToken })).status, 200);
     assert.equal((await request('/auth/logout', { method: 'POST', cookie: newCookie })).status, 200);
     assert.equal((await request('/auth/refresh', { method: 'POST', cookie: newCookie })).status, 401);
   } finally {

@@ -16,7 +16,11 @@ Trabajo exclusivamente sobre v2-development. Sin cambios en main ni despliegues.
 - Confirmación y cancelación de reservas con transacciones entre Reserva y Turno; las pagadas requieren gestión de reintegro con el club.
 - Suspensión de usuario invalida inmediatamente el acceso a rutas protegidas.
 - Respuestas administrativas sin hashes, tokens de recuperación ni credenciales MP.
-- Estadísticas filtradas por mes solicitado y capacidad calculada según calendario real.
+- Estadísticas filtradas por mes solicitado y capacidad calculada según calendario real; inicialización única de gráficos.
+- ABM de canchas con validación de tipos, minutos, días, precios y duración; permisos del club propietario.
+- Edición de email del club migra sus canchas y turnos en una transacción.
+- Paneles de club y SuperAdmin escapan texto de registros antes de insertarlo en HTML.
+- Club: edición conserva días seleccionados, logout elimina JWT y links de pago usan ruta protegida vigente.
 - Webhook: pendiente no se consume definitivamente; aprobado valida moneda, importe, club y referencia única de la reserva antes de marcar pagado. Pago y evento se guardan en una transacción.
 - Reutilizar un horario genera otra referencia; una aprobación tardía de la reserva anterior se rechaza.
 - Destacados: checkout autorizado por club, orden con precio y días fijados al comprar; aprobación transaccional, renovaciones acumuladas e idempotencia.
@@ -30,6 +34,7 @@ Trabajo exclusivamente sobre v2-development. Sin cambios en main ni despliegues.
 
 - Backend: 8 pruebas unitarias y un recorrido HTTP de integración con MongoDB local descartable.
 - Frontend: 12 pruebas con DOM simulado, verificación sintáctica de scripts externos e inline y recorrido adicional en Chromium.
+- Texto con marcado HTML probado en ambos paneles: se muestra como texto sin ejecutar contenido.
 - Integración: login, refresh concurrente, suspensión, privacidad pública y administrativa, roles, invitado, reserva, confirmación concurrente, cancelación, estadísticas históricas y webhook simulado pendiente/aprobado/importe incorrecto/duplicado.
 - Fallas de escritura inyectadas verifican rollback de confirmación, cancelación y pago, seguido de reintento exitoso. Prueba de pago tardío tras reutilizar un horario.
 - Destacados: pendiente/aprobado, importe incorrecto, duplicado y cambio de configuración después de generar checkout; se conserva precio y duración originales.
@@ -41,10 +46,10 @@ Estos resultados no garantizan ausencia de defectos o vulnerabilidades.
 
 ## Pendientes para cerrar la validación de V2
 
-- Chromium: buscador, detalle, reserva con JWT y logout pasaron con API y recursos externos simulados; capturas revisadas y contraste del encabezado de detalle corregido. También pasó navegador + backend + MongoDB aislados: cookie HttpOnly, refresh entre páginas, perfil, reserva, OTP y logout. Pendiente Leaflet y recursos CSS externos.
+- Chromium: buscador y detalle con capturas revisadas. Navegador + backend + MongoDB aislados: cookie HttpOnly, refresh, perfil, reserva, OTP, logout; SuperAdmin login, secciones, edición de club, configuración y logout; club login, ABM de canchas, agenda, lista de reservas, QR, estadísticas y logout. Bootstrap, Leaflet, FullCalendar, QRCode y Chart.js se sirven desde dependencias locales de prueba. Mapas/tiles y otros recursos de terceros siguen simulados.
 - MercadoPago sandbox con credenciales de prueba: checkout completo y recepción de webhook del proveedor.
 - Brevo con destinatario de prueba: entrega de verificación, OTP y recuperación de contraseña.
-- Paneles completos de club y SuperAdmin: recorridos funcionales de agenda, ABM y estadísticas.
+- Casos adicionales de panel: reservar desde agenda, compartir pago por WhatsApp, reintegros y comportamiento con servicios externos reales. No se enviaron mensajes.
 - Datos existentes: revisar índices y consistencia antes de aplicar cambios a una base compartida.
 - Migración de pagos antiguos: reservas sin bookingId mantienen referencia antigua; enlaces anteriores de destacados sin orden deben reconciliarse antes de desplegar esta versión.
 - Rendimiento bajo carga representativa y políticas de pagos/reintegros con operaciones reales.

@@ -1,3 +1,4 @@
+const { courtInput } = require('./utils/courtInput');
 const DestacadoOrder = require('./models/DestacadoOrder');
 const { transaction, failure } = require('./utils/reservationWrites');
 const { randomUUID } = require('node:crypto');
@@ -1154,105 +1155,27 @@ app.get('/canchas/:clubEmail', async (req, res) => {
 });
 
 app.post('/canchas', authClub, async (req, res) => {
-  const { 
-    nombre, deporte, precio, horaDesde, horaHasta, 
-    diasDisponibles, clubEmail, duracionTurno,
-    nocturnoDesde, precioNocturno
-  } = req.body;
-
-  if (clubEmail !== req.clubEmail) return res.status(403).json({ error: 'La cancha debe pertenecer al club autenticado' });
-  // ✅ Validaciones obligatorias
-  if (!nombre || !deporte || !precio || !horaDesde || !horaHasta || !clubEmail) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios para crear la cancha.' });
-  }
-
-  if (isNaN(precio) || Number(precio) <= 0) {
-    return res.status(400).json({ error: 'El precio debe ser un número mayor que 0.' });
-  }
-
-  const desde = parseInt(horaDesde.split(':')[0]);
-  const hasta = parseInt(horaHasta.split(':')[0]);
-  if (hasta <= desde) {
-    return res.status(400).json({ error: 'El horario "Hasta" debe ser mayor que el horario "Desde".' });
-  }
-
+  if (req.body.clubEmail !== req.clubEmail) return res.status(403).json({ error: 'La cancha debe pertenecer al club autenticado' });
+  const input = courtInput(req.body);
+  if (input.error) return res.status(400).json({ error: input.error });
   try {
-    const nuevaCancha = new Cancha({
-      nombre,
-      deporte,
-      precio,
-      horaDesde,
-      horaHasta,
-      diasDisponibles: Array.isArray(diasDisponibles) ? diasDisponibles : [],
-      clubEmail,
-      duracionTurno: Number(duracionTurno) || 60,
-      nocturnoDesde: (nocturnoDesde === '' || nocturnoDesde === null || nocturnoDesde === undefined) ? null : Number(nocturnoDesde),
-      precioNocturno: (precioNocturno === '' || precioNocturno === null || precioNocturno === undefined) ? null : Number(precioNocturno)
-    });
-
-    await nuevaCancha.save();
+    await Cancha.create(input.value);
     res.json({ mensaje: 'Cancha agregada correctamente' });
-  } catch (error) {
-    console.error('❌ Error al agregar cancha:', error);
-    res.status(500).json({ error: 'Error al agregar cancha' });
-  }
+  } catch (error) { res.status(500).json({ error: 'Error al agregar cancha' }); }
 });
-
-
-
 
 app.put('/canchas/:id', authClub, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Identificador de cancha inválido' });
   try {
-    const { 
-      nombre, deporte, precio, horaDesde, horaHasta, 
-      diasDisponibles, clubEmail, duracionTurno,
-      nocturnoDesde, precioNocturno
-    } = req.body;
-
-    // ✅ Validaciones obligatorias
-    if (!nombre || !deporte || !precio || !horaDesde || !horaHasta || !clubEmail) {
-      return res.status(400).json({ error: 'Faltan campos obligatorios para actualizar la cancha.' });
-    }
-
-    if (isNaN(precio) || Number(precio) <= 0) {
-      return res.status(400).json({ error: 'El precio debe ser un número mayor que 0.' });
-    }
-
-    const desde = parseInt(horaDesde.split(':')[0]);
-    const hasta = parseInt(horaHasta.split(':')[0]);
-    if (hasta <= desde) {
-      return res.status(400).json({ error: 'El horario "Hasta" debe ser mayor que el horario "Desde".' });
-    }
-
     const cancha = await Cancha.findById(req.params.id);
     if (!cancha) return res.status(404).json({ error: 'Cancha no encontrada' });
-    if (String(cancha.clubEmail).toLowerCase() !== String(req.clubEmail).toLowerCase()) {
-      return res.status(403).json({ error: 'No autorizado para modificar esta cancha' });
-    }
-
-    const update = {
-      nombre,
-      deporte,
-      precio,
-      horaDesde,
-      horaHasta,
-      diasDisponibles: Array.isArray(diasDisponibles) ? diasDisponibles : [],
-      clubEmail: req.clubEmail,
-      duracionTurno: Number(duracionTurno) || 60,
-      nocturnoDesde: (nocturnoDesde === '' || nocturnoDesde === null) ? null : Number(nocturnoDesde),
-      precioNocturno: (precioNocturno === '' || precioNocturno === null) ? null : Number(precioNocturno)
-    };
-
-    await Cancha.findByIdAndUpdate(req.params.id, update);
+    if (cancha.clubEmail !== req.clubEmail) return res.status(403).json({ error: 'No autorizado para modificar esta cancha' });
+    const input = courtInput({ ...req.body, clubEmail: req.clubEmail });
+    if (input.error) return res.status(400).json({ error: input.error });
+    await Cancha.findByIdAndUpdate(req.params.id, input.value, { runValidators: true });
     res.json({ mensaje: 'Cancha actualizada correctamente' });
-  } catch (error) {
-    console.error('❌ Error al actualizar cancha:', error);
-    res.status(500).json({ error: 'Error al actualizar cancha' });
-  }
+  } catch (error) { res.status(500).json({ error: 'Error al actualizar cancha' }); }
 });
-
-
-
 
 app.delete('/canchas/:id', authClub, async (req, res) => {
     try {
@@ -1294,6 +1217,23 @@ app.put('/turnos/:id', authClub, async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: 'Error al actualizar turno' });
     }
+});
+
+app.post('/turnos/:id/payment-link', authClub, async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Identificador de turno inválido' });
+  try {
+    const turno = await Turno.findOne({ _id: req.params.id, club: req.clubEmail });
+    if (!turno || !turno.usuarioReservado) return res.status(404).json({ error: 'Reserva no encontrada' });
+    if (turno.pagado) return res.status(409).json({ error: 'La reserva ya está pagada' });
+    const club = await Club.findById(req.clubId);
+    if (!club?.mercadoPagoAccessToken) return res.status(400).json({ error: 'El club no tiene configurado su Access Token' });
+    const response = await mercadopago.preferences.create({
+      items: [{ title: 'Reserva de cancha - ' + turno.deporte, quantity: 1, currency_id: 'ARS', unit_price: turno.precio }],
+      external_reference: paymentReference(turno),
+      notification_url: 'https://api.canchalibre.ar/api/mercadopago/webhook?club=' + encodeURIComponent(club.email) + '&turno=' + turno._id
+    }, { access_token: club.mercadoPagoAccessToken });
+    return res.json({ pagoUrl: response.body.init_point });
+  } catch (error) { return res.status(500).json({ error: 'Error generando link de pago' }); }
 });
 
 app.patch('/turnos/:id/cancelar', authClub, async (req, res) => {
