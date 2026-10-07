@@ -10,7 +10,7 @@ function validBookingSlot(cancha, fecha, hora, now = new Date()) {
     if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value))) return NaN;
     const [h, m] = value.split(':').map(Number); return h * 60 + m;
   };
-  const start = minutes(cancha.horaDesde), end = minutes(cancha.horaHasta), slot = minutes(hora);
+  const start = minutes(cancha.horaDesde), end = cancha.horaHasta === '24:00' ? 1440 : minutes(cancha.horaHasta), slot = minutes(hora);
   const duration = Number(cancha.duracionTurno || 60);
   return Number.isFinite(start) && Number.isFinite(end) && duration > 0 && slot >= start && slot + duration <= end && (slot - start) % duration === 0;
 }

@@ -13,3 +13,10 @@ test('future check uses Argentina time rather than server timezone', () => {
   assert.equal(validBookingSlot(cancha, '2030-01-10', '10:00', new Date('2030-01-10T12:59:00Z')), true);
   assert.equal(validBookingSlot(cancha, '2030-01-10', '10:00', new Date('2030-01-10T13:01:00Z')), false);
 });
+
+test('supports closing at midnight and slots of 90 minutes', () => {
+  assert.equal(validBookingSlot({ ...cancha, horaHasta: '24:00' }, '2030-01-10', '23:00', now), true);
+  const long = { ...cancha, duracionTurno: 90 };
+  assert.equal(validBookingSlot(long, '2030-01-10', '09:30', now), true);
+  assert.equal(validBookingSlot(long, '2030-01-10', '10:00', now), false);
+});

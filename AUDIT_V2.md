@@ -23,7 +23,7 @@ Trabajo exclusivamente sobre v2-development. Sin cambios en main ni despliegues.
 
 ## Validación
 
-- Backend: 7 pruebas unitarias y un recorrido HTTP de integración con MongoDB local descartable.
+- Backend: 8 pruebas unitarias y un recorrido HTTP de integración con MongoDB local descartable.
 - Frontend: 12 pruebas con DOM simulado, verificación sintáctica de scripts externos e inline y recorrido adicional en Chromium.
 - Integración: login, refresh concurrente, privacidad, invitado, reserva, confirmación concurrente, cancelación y webhook simulado pendiente/aprobado/importe incorrecto/duplicado.
 - SDK: prueba de solicitudes reales del SDK con transporte HTTP simulado; verifica aislamiento de tokens de dos clubes.
