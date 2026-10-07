@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 
 async function startServer({ port = process.env.PORT || 3000 } = {}) {
   await connectDatabase();
+  await require('./fixtures/v2-test').seedV2Test();
   require('./utils/mercadopago').configure({
     access_token: process.env.MP_ACCESS_TOKEN,
   });
