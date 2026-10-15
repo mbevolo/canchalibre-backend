@@ -20,6 +20,8 @@ const ReservaSchema = new mongoose.Schema({
   codigoOTP: { type: String, default: null },
   expiresAt: { type: Date, required: true },
 
+  canalConfirmacion: { type: String, enum: ['email', 'whatsapp'], default: 'email' },
+  telefonoContacto: String,
   emailContacto: { type: String, default: null },
 
   createdAt: { type: Date, default: Date.now }

@@ -1,6 +1,10 @@
 // models/config.js
 const mongoose = require('mongoose');
 const ConfigSchema = new mongoose.Schema({
+    reservationChannel: { type: String, enum: ['whatsapp', 'email'], default: 'email' },
+    greenInstanceId: String,
+    greenApiUrl: { type: String, default: 'https://api.green-api.com' },
+    greenTokenEncrypted: { type: String, select: false },
     precioDestacado: { type: Number, default: 4999 },
     diasDestacado: { type: Number, default: 30 },
     mpTokenEncrypted: { type: String, select: false },

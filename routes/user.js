@@ -79,7 +79,7 @@ router.get('/reservas', authUser, async (req, res) => {
   }
 });
 
-router.post('/reservas/:id/resend-confirmation', authUser, async (req, res) => {
+router.post('/reservas/:id/resend-confirmation', authUser, require('../middlewares/rateLimits').sensitiveLimiter, async (req, res) => {
   try {
     const user = await getCurrentUser(req);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -97,27 +97,21 @@ router.post('/reservas/:id/resend-confirmation', authUser, async (req, res) => {
       return res.status(400).json({ error: 'La reserva pendiente expiró.' });
     }
 
-    reserva.expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    reserva.codigoOTP = crypto.randomInt(100000, 1000000).toString();
-    await reserva.save();
-
     const cancha = await Cancha.findById(reserva.canchaId);
     const club = cancha?.clubEmail
       ? await Club.findOne({ email: cancha.clubEmail }).select('nombre').lean()
       : null;
-    const link = process.env.FRONT_URL + '/confirmar-reserva.html?id=' + reserva._id + '&code=' + reserva.codigoOTP;
-    const html = '<h2>Confirmación de tu reserva</h2>' +
-      '<p>Club: ' + (club?.nombre || 'A confirmar') + '</p>' +
-      '<p>Cancha: ' + (cancha?.nombre || 'Sin nombre') + '</p>' +
-      '<p>Fecha: ' + reserva.fecha + '</p>' +
-      '<p>Hora: ' + reserva.hora + '</p>' +
-      '<p><a href="' + link + '">Confirmar reserva</a></p>';
-
-    await sendMail(user.email, 'Confirmá tu reserva en CanchaLibre', html);
-    return res.json({ mensaje: 'Correo reenviado correctamente.' });
+    const notifications = require('../services/reservationNotifications');
+    const config = await notifications.settings();
+    reserva.codigoOTP = crypto.randomInt(100000, 1000000).toString();
+    reserva.canalConfirmacion = notifications.publicSettings(config).channel;
+    reserva.telefonoContacto = user.telefono;
+    await reserva.save();
+    await notifications.sendPending(reserva, user, cancha, club, config);
+    return res.json({ mensaje: reserva.canalConfirmacion === 'whatsapp' ? 'Confirmación reenviada por WhatsApp.' : 'Confirmación reenviada por correo.' });
   } catch (error) {
     console.error("❌ Error en resend-confirmation:");
-    return res.status(500).json({ error: 'Error al reenviar el correo.' });
+    return res.status(500).json({ error: 'No se pudo reenviar la confirmación. Revisá tu celular en Mi cuenta e intentá nuevamente.' });
   }
 });
 

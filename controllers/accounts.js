@@ -30,9 +30,8 @@ const postRegistrar = async (req, res) => {
     const existe = await Usuario.findOne({ email });
     if (existe) return res.status(400).json({ error: 'El usuario ya existe' });
 
-    // Normalizar teléfono
-    const tel = String(telefono || '').replace(/\D/g, '');
-    const telefonoNormalizado = tel.startsWith('549') ? tel : '549' + tel;
+    const telefonoNormalizado = require('../utils/phone').normalizePhone(telefono);
+    if (!telefonoNormalizado) return res.status(400).json({ error: 'Ingresá un celular válido, sin 0 ni 15.' });
 
     const hash = await bcrypt.hash(password, 10);
 

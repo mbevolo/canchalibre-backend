@@ -85,6 +85,41 @@ router.put('/mercadopago', superadminAuth, require('../middlewares/rateLimits').
   } catch (error) { res.status(error.status || 502).json({ ok: false, msg: error.status ? error.message : 'No se pudo verificar o guardar MercadoPago. Intentá nuevamente.' }); }
 });
 
+// Credenciales de WhatsApp cifradas; nunca se devuelven al navegador.
+router.get('/reservas-notificaciones', superadminAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const service = require('../services/reservationNotifications');
+    res.json({ ok: true, notifications: service.publicSettings(await service.settings()) });
+  } catch (_) { res.status(500).json({ ok: false, msg: 'No se pudo cargar la configuración' }); }
+});
+router.put('/reservas-notificaciones', superadminAuth, require('../middlewares/rateLimits').sensitiveLimiter, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const input = Joi.object({
+    channel: Joi.string().valid('email', 'whatsapp').required(),
+    instanceId: Joi.string().pattern(/^\d{6,20}$/),
+    apiToken: Joi.string().pattern(/^[A-Za-z0-9_-]{16,256}$/),
+    apiUrl: Joi.string().pattern(/^https:\/\/(?:api|[a-z0-9-]+\.api)\.green-api\.com$/),
+  }).unknown(false).validate(req.body);
+  if (input.error) return res.status(400).json({ ok: false, msg: 'Configuración inválida. Revisá los datos de GREEN-API.' });
+  try {
+    const service = require('../services/reservationNotifications');
+    const current = await service.settings();
+    const candidate = { ...current?.toObject(), reservationChannel: input.value.channel };
+    if (input.value.instanceId) candidate.greenInstanceId = input.value.instanceId;
+    if (input.value.apiUrl) candidate.greenApiUrl = input.value.apiUrl;
+    if (input.value.apiToken) candidate.greenTokenEncrypted = service.encrypt(input.value.apiToken);
+    if (candidate.reservationChannel === 'whatsapp') {
+      const state = await service.greenRequest(candidate, 'getStateInstance');
+      if (state.stateInstance !== 'authorized') return res.status(400).json({ ok: false, msg: 'Vinculá el WhatsApp de CanchaLibre mediante el QR en GREEN-API antes de activarlo.' });
+    }
+    const updates = { reservationChannel: candidate.reservationChannel };
+    for (const k of ['greenInstanceId', 'greenApiUrl', 'greenTokenEncrypted']) if (candidate[k]) updates[k] = candidate[k];
+    await Config.findOneAndUpdate({}, { $set: updates }, { upsert: true, runValidators: true });
+    res.json({ ok: true, notifications: service.publicSettings(candidate) });
+  } catch (_) { res.status(502).json({ ok: false, msg: 'No se pudo verificar o guardar WhatsApp. Revisá las credenciales y la conexión.' }); }
+});
+
 // Listado de clubes solo para superadmin (PROTEGIDO)
 router.get('/clubes', superadminAuth, async (req, res) => {
   try {
@@ -239,9 +274,11 @@ router.delete('/clubes/:id', superadminAuth, async (req, res) => {
 router.put('/usuarios/:id', superadminAuth, async (req, res) => {
   try {
     const { nombre, apellido, email, telefono } = req.body;
+    const normalizedPhone = require('../utils/phone').normalizePhone(telefono);
+    if (!normalizedPhone) return res.status(400).json({ ok: false, msg: 'Ingresá un celular válido, sin 0 ni 15.' });
     const usuario = await Usuario.findByIdAndUpdate(
       req.params.id,
-      { nombre, apellido, email, telefono },
+      { nombre, apellido, email, telefono: normalizedPhone },
       { new: true }
     );
     if (!usuario) return res.status(404).json({ ok: false, msg: 'Usuario no encontrado' });

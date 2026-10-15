@@ -9,7 +9,6 @@ const {
   formatearFechaDDMMYYYY,
   calcularPrecioTurno,
 } = require('../services/booking');
-const { sendMail } = require('../utils/email');
 const { confirmReservation } = require('../services/reservations');
 const { paymentReference } = require('../services/payments');
 const mercadopago = require('../utils/mercadopago');
@@ -18,16 +17,18 @@ const postReservasHold = async (req, res) => {
   try {
     const { canchaId, fecha, hora, email: emailBody, metodoPago } = req.body;
     let usuarioId = null;
+    let contacto = null;
     let email = String(emailBody || '')
       .trim()
       .toLowerCase();
 
     if (req.userId) {
       const usuarioAutenticado = await Usuario.findById(req.userId)
-        .select('_id email')
+        .select('_id email telefono')
         .lean();
       if (!usuarioAutenticado)
         return res.status(401).json({ error: 'Usuario no encontrado' });
+      contacto = usuarioAutenticado;
       usuarioId = usuarioAutenticado._id;
       email = usuarioAutenticado.email;
     }
@@ -59,6 +60,14 @@ const postReservasHold = async (req, res) => {
     )
       return res.status(409).json({ error: 'El turno ya está reservado' });
 
+    const notifications = require('../services/reservationNotifications');
+    const config = await notifications.settings();
+    const channel = notifications.publicSettings(config).channel;
+    if (channel === 'whatsapp') {
+      if (!contacto) return res.status(401).json({ error: 'Iniciá sesión para reservar por WhatsApp.' });
+      if (!require('../utils/phone').normalizePhone(contacto.telefono)) return res.status(400).json({ error: 'Completá un celular válido en Mi cuenta antes de reservar.' });
+      if (!notifications.publicSettings(config).configured) return res.status(503).json({ error: 'WhatsApp aún no está configurado. Contactá a CanchaLibre.' });
+    }
     const codigoOTP = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60000);
 
@@ -68,6 +77,8 @@ const postReservasHold = async (req, res) => {
       hora,
       usuarioId,
       emailContacto: email,
+      telefonoContacto: contacto?.telefono,
+      canalConfirmacion: channel,
       metodoPago: metodoPago === 'online' ? 'online' : 'efectivo', // ✅ guarda online o efectivo
       estado: 'PENDING',
       codigoOTP,
@@ -82,51 +93,16 @@ const postReservasHold = async (req, res) => {
       club = await Club.findOne({ email: cancha.clubEmail });
     }
 
-    // 🟦 Calculamos el precio usando tu helper de precio nocturno
-    let precioCalculado = null;
     try {
-      const [Y, M, D] = fecha.split('-').map(Number); // asume YYYY-MM-DD
-      const [h, m] = hora.split(':').map(Number);
-      const inicioReserva = new Date(Y, M - 1, D, h, m || 0, 0, 0);
-      if (cancha) {
-        precioCalculado = calcularPrecioTurno(cancha, inicioReserva);
-      }
-    } catch (e) {
-      console.error("⚠️ No se pudo calcular precio para el mail de reserva:");
+      await notifications.sendPending(reserva, contacto || { email }, cancha, club, config);
+    } catch (error) {
+      await Reserva.updateOne({ _id: reserva._id, estado: 'PENDING' }, { $set: { estado: 'CANCELLED' } });
+      throw error;
     }
-
-    const link = `${process.env.FRONT_URL}/confirmar-reserva.html?id=${reserva._id}&code=${codigoOTP}`;
-
-    const html = `
-      <h2>Confirmación de tu reserva</h2>
-
-      <p>Estos son los datos de tu reserva pendiente:</p>
-      <ul>
-        <li><strong>Club:</strong> ${club ? club.nombre : 'A confirmar'}</li>
-        <li><strong>Cancha:</strong> ${cancha ? cancha.nombre : 'Sin nombre'}</li>
-        <li><strong>Deporte:</strong> ${cancha ? cancha.deporte : ''}</li>
-        <li><strong>Fecha:</strong> ${formatearFechaDDMMYYYY(reserva.fecha)}</li>
-        <li><strong>Hora:</strong> ${hora}</li>
-        ${precioCalculado !== null ? `<li><strong>Precio estimado:</strong> $${precioCalculado}</li>` : ''}
-      </ul>
-
-      <hr/>
-
-      <p>Para confirmar la reserva, hacé clic en el siguiente enlace (vence en 10 minutos):</p>
-      <p><a href="${link}">${link}</a></p>
-
-      <p>Si no realizaste esta reserva, podés ignorar este mensaje.</p>
-    `;
-
-    await sendMail(email, 'Confirmá tu reserva en CanchaLibre', html);
-
-    res.json({
-      mensaje: 'Te enviamos un email para confirmar tu reserva.',
-      reservaId: reserva._id,
-    });
+    res.json({ mensaje: channel === 'whatsapp' ? 'Enviamos la solicitud de confirmación por WhatsApp. Abrí el enlace recibido; vence en 10 minutos.' : 'Te enviamos un correo para confirmar tu reserva. Revisá también SPAM.', canal: channel, reservaId: reserva._id });
   } catch (error) {
     console.error("❌ Error en /reservas/hold:");
-    res.status(500).json({ error: 'Error al crear reserva pendiente.' });
+    res.status(error.status || 502).json({ error: error.status ? error.message : 'No se pudo enviar la confirmación. Intentá nuevamente.' });
   }
 };
 
@@ -201,9 +177,7 @@ const getReservasConfirmarIdCode = async (req, res) => {
 
     let clubConfirmado = null;
     try { clubConfirmado = await Club.findOne({ email: cancha.clubEmail }); } catch (_) {}
-    await require('../services/confirmationEmail').sendConfirmationEmail(
-      turno, cancha, clubConfirmado, emailReservadoFinal,
-    );
+    await require('../services/reservationNotifications').sendConfirmed(turno, cancha, clubConfirmado, reserva);
 
     // 4) Si eligió MercadoPago -> crear preferencia y redirigir
 
