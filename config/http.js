@@ -8,6 +8,8 @@ function configureHttp(app) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
+  // Dominios públicos del frontend CanchaLibre V2, además de los configurados por entorno.
+  allowedOrigins.push('https://canchalibre.ar', 'https://www.canchalibre.ar');
   app.use(
     cors({
       origin(origin, callback) {
